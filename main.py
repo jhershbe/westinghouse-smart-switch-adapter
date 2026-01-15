@@ -82,7 +82,7 @@ def is_request_run():
     return not in_run_request.value()
 
 def is_cool_down_starting():
-    return is_running() and (not is_request_run()) and (not (cool_down_active or maintenance_active))
+    return is_running() and (not is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
 
 def is_cool_down_finished():
     return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
