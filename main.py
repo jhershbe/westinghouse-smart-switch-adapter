@@ -56,7 +56,9 @@ prev_state = {
     'run_request': False,
     'cool_down': False,
     'maintenance': False,
-    'days': maintenance_interval
+    'days': maintenance_interval,
+    'kill_relay': False,
+    'start_relay': False
 }
 
 def log_state_change(event, details=''):
@@ -120,14 +122,23 @@ async def manage_start_stop():
             # No need for scheduled maintenance if we needed to run
             days_until_maintenance = maintenance_interval
             if is_running():
-                relay_start_gen.value(0)
+                if prev_state['start_relay']:
+                    relay_start_gen.value(0)
+                    log_state_change('Start Relay', 'Deactivated (already running)')
+                    prev_state['start_relay'] = False
                 cool_down_active = False
             else:
-                relay_start_gen.value(1)
+                if not prev_state['start_relay']:
+                    relay_start_gen.value(1)
+                    log_state_change('Start Relay', 'Activated (starting generator)')
+                    prev_state['start_relay'] = True
         else:
             # never started and don't want it anymore
             if not is_running():
-                relay_start_gen.value(0)
+                if prev_state['start_relay']:
+                    relay_start_gen.value(0)
+                    log_state_change('Start Relay', 'Deactivated (no run request)')
+                    prev_state['start_relay'] = False
 
         if is_cool_down_starting():
             cool_down_active = True
@@ -151,9 +162,15 @@ async def manage_start_stop():
             log_state_change('Maintenance', 'Started (10 min)')
         if maintenance_active:
             if is_running():
-                relay_start_gen.value(0)
+                if prev_state['start_relay']:
+                    relay_start_gen.value(0)
+                    log_state_change('Start Relay', 'Deactivated (maintenance - already running)')
+                    prev_state['start_relay'] = False
             else:
-                relay_start_gen.value(1)
+                if not prev_state['start_relay']:
+                    relay_start_gen.value(1)
+                    log_state_change('Start Relay', 'Activated (maintenance start)')
+                    prev_state['start_relay'] = True
         if is_maintenance_finished():
             maintenance_active = False
             kill_gen = True
@@ -170,11 +187,15 @@ async def manage_start_stop():
 
         if kill_gen and is_running():
             relay_kill_gen.value(1)
-            log_state_change('Kill Relay', 'Activated')
+            if not prev_state['kill_relay']:
+                log_state_change('Kill Relay', 'Activated')
+                prev_state['kill_relay'] = True
         elif kill_gen:
             kill_gen = False
             relay_kill_gen.value(0)
-            log_state_change('Kill Relay', 'Deactivated')
+            if prev_state['kill_relay']:
+                log_state_change('Kill Relay', 'Deactivated')
+                prev_state['kill_relay'] = False
 
         await asyncio.sleep_ms(50)
 
