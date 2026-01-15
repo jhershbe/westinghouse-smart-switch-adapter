@@ -97,6 +97,10 @@ last_kill_action = 0
 last_run_sense_start = 0
 last_run_sense_end = 0
 
+# Testing overrides
+test_override_running = None  # None = use actual sensor, True/False = override
+test_override_request = None  # None = use actual sensor, True/False = override
+
 # State transition logging
 state_log = []
 MAX_LOG_ENTRIES = 50
@@ -128,9 +132,13 @@ def log_state_change(event, details=''):
     print(f"[{entry['timestamp']}] {event}: {details}")
 
 def is_running():
+    if test_override_running is not None:
+        return test_override_running
     return not in_run_sense.value()
 
 def is_request_run():
+    if test_override_request is not None:
+        return test_override_request
     return not in_run_request.value()
 
 def is_cool_down_starting():
@@ -420,6 +428,44 @@ def update_config_route(request):
         return {'status': 'ok'}
     except Exception as e:
         return {'error': str(e)}
+
+@app.route('/ping')
+def ping(request):
+    return {'status': 'ok', 'message': 'Server is running'}
+
+# Testing endpoints
+@app.route('/test/force_maintenance', methods=['POST'])
+def test_force_maintenance(request):
+    global days_until_maintenance
+    days_until_maintenance = 0
+    log_state_change('TEST', 'Forced maintenance countdown to 0')
+    return {'status': 'ok', 'message': 'Maintenance will start in next cycle'}
+
+@app.route('/test/override_running', methods=['POST'])
+def test_override_running_endpoint(request):
+    global test_override_running
+    data = request.json
+    override = data.get('override')  # True, False, or None
+    if override == 'none' or override is None:
+        test_override_running = None
+        log_state_change('TEST', 'Cleared running override (using sensor)')
+    else:
+        test_override_running = bool(override)
+        log_state_change('TEST', f'Override running = {test_override_running}')
+    return {'status': 'ok', 'override': test_override_running}
+
+@app.route('/test/override_request', methods=['POST'])
+def test_override_request_endpoint(request):
+    global test_override_request
+    data = request.json
+    override = data.get('override')  # True, False, or None
+    if override == 'none' or override is None:
+        test_override_request = None
+        log_state_change('TEST', 'Cleared request override (using sensor)')
+    else:
+        test_override_request = bool(override)
+        log_state_change('TEST', f'Override request = {test_override_request}')
+    return {'status': 'ok', 'override': test_override_request}
 
 async def main():
     print('Starting Generator Controller...')

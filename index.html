@@ -19,6 +19,14 @@
         .log-time { color: #666; margin-right: 10px; }
         .log-event { font-weight: bold; color: #333; margin-right: 10px; }
         .log-details { color: #555; }
+        .test-section { margin-top: 30px; padding: 15px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 4px; }
+        .test-section h3 { margin-top: 0; color: #856404; }
+        .test-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .test-button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .test-button.warning { background: #ff9800; color: white; }
+        .test-button.danger { background: #f44336; color: white; }
+        .test-button.success { background: #4CAF50; color: white; }
+        .test-button:hover { opacity: 0.8; }
     </style>
 </head>
 <body>
@@ -75,6 +83,22 @@
         </div>
         <div style='margin-top: 10px; text-align: center; font-size: 12px; color: #666;'>
             Uptime: <span id='uptimeDisplay'>--</span>
+        </div>
+
+        <div class='test-section'>
+            <h3>Testing Controls</h3>
+            <div class='test-buttons'>
+                <button class='test-button success' onclick='testConnection()'>Test Connection</button>
+                <button class='test-button warning' onclick='forceMaintenance()'>Force Maintenance (2s)</button>
+            </div>
+            <div class='test-buttons'>
+                <button class='test-button danger' onclick='overrideRunning(true)'>Override Running: YES</button>
+                <button class='test-button success' onclick='overrideRunning(false)'>Override Running: NO</button>
+                <button class='test-button success' onclick='overrideRunning(null)'>Clear Running Override</button>
+                <button class='test-button danger' onclick='overrideRequest(true)'>Override Request: YES</button>
+                <button class='test-button success' onclick='overrideRequest(false)'>Override Request: NO</button>
+                <button class='test-button success' onclick='overrideRequest(null)'>Clear Request Override</button>
+            </div>
         </div>
     </div>
     <script src='/script.js'></script>

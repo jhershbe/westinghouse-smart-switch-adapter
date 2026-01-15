@@ -22,8 +22,17 @@ function formatUptime(seconds) {
 
 function updateStatus() {
     fetch('/status')
-        .then(r => r.json())
-        .then(data => {
+        .then(r => {
+            if (!r.ok) {
+                throw new Error('HTTP ' + r.status);
+            }
+            // Get the raw text first to see what we're receiving
+            return r.text();
+        })
+        .then(text => {
+            // Try to parse as JSON
+            var data = JSON.parse(text);
+            console.log('Status data:', data);
             document.getElementById('running').innerHTML = 
                 '<span class="indicator ' + (data.running ? 'on' : 'off') + '"></span>' + 
                 (data.running ? 'Yes' : 'No');
@@ -167,4 +176,62 @@ if (window.location.pathname === '/logpage') {
     updateUptime();
     setInterval(updateStatus, 1000);
     setInterval(updateUptime, 5000);
+}
+
+// Testing functions
+function testConnection() {
+    fetch('/ping')
+        .then(r => r.json())
+        .then(data => {
+            alert('✓ Connection OK: ' + data.message);
+        })
+        .catch(e => {
+            alert('✗ Connection Failed: ' + e.message + '\n\nMake sure you are connected to GenController WiFi network.');
+        });
+}
+
+function forceMaintenance() {
+    fetch('/test/force_maintenance', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        alert('Maintenance forced! Check status and log.');
+        updateStatus();
+        updateLog();
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+function overrideRunning(value) {
+    fetch('/test/override_running', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({override: value === null ? 'none' : value})
+    })
+    .then(r => r.json())
+    .then(data => {
+        const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
+        alert('Running override: ' + msg);
+        updateStatus();
+        updateLog();
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+function overrideRequest(value) {
+    fetch('/test/override_request', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({override: value === null ? 'none' : value})
+    })
+    .then(r => r.json())
+    .then(data => {
+        const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
+        alert('Request override: ' + msg);
+        updateStatus();
+        updateLog();
+    })
+    .catch(e => alert('Error: ' + e));
 }
