@@ -1,6 +1,7 @@
 import machine
 import time
 import asyncio
+import network
 
 in_run_sense = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
 in_run_request = machine.Pin(13, machine.Pin.IN, machine.Pin.PULL_UP)
@@ -11,11 +12,32 @@ led_maintenance = machine.Pin(19, machine.Pin.OUT)
 relay_start_gen = machine.Pin(32, machine.Pin.OUT)
 relay_kill_gen = machine.Pin(33, machine.Pin.OUT)
 
+# Initialize relays to safe state (off)
+relay_start_gen.value(0)
+relay_kill_gen.value(0)
+
+# WiFi Access Point Setup
+ap = network.WLAN(network.AP_IF)
+ap.active(True)
+ap.config(essid='GenController', password='westinghouse', authmode=network.AUTH_WPA_WPA2_PSK)
+
+# Wait for AP to be active
+while not ap.active():
+    time.sleep(0.1)
+print('AP active, IP:', ap.ifconfig()[0])
+
+# Import Microdot after WiFi is initialized
+from microdot import Microdot, Response
+
+# Set up Microdot
+app = Microdot()
+Response.default_content_type = 'application/json'
+
 cool_down_active = False
 cool_down_duration = 15 * 60 * 1000 # 15 minutes
 cool_down_end = 0
 
-us_per_day = 24 * 60 * 60 * 1000 # one day
+ms_per_day = 24 * 60 * 60 * 1000  # one day in milliseconds
 maintenance_active = False
 maintenance_interval = 7 # maintenance days
 days_until_maintenance = maintenance_interval
@@ -23,6 +45,34 @@ maintenance_duration = 10 * 60 * 1000 # 10 minutes
 maintenance_end = 0
 
 kill_gen = False
+
+# State transition logging
+state_log = []
+MAX_LOG_ENTRIES = 50
+
+# Track previous states for change detection
+prev_state = {
+    'running': False,
+    'run_request': False,
+    'cool_down': False,
+    'maintenance': False,
+    'days': maintenance_interval
+}
+
+def log_state_change(event, details=''):
+    """Log a state transition with timestamp"""
+    global state_log
+    entry = {
+        'timestamp': time.ticks_ms(),
+        'event': event,
+        'details': details
+    }
+    state_log.append(entry)
+    # Keep only last MAX_LOG_ENTRIES
+    if len(state_log) > MAX_LOG_ENTRIES:
+        state_log.pop(0)
+    print(f"[{entry['timestamp']}] {event}: {details}")
+
 def is_running():
     return not in_run_sense.value()
 
@@ -48,7 +98,24 @@ async def manage_start_stop():
     global days_until_maintenance
     global maintenance_active
     global maintenance_end
+    global prev_state
+
+    # Log startup
+    log_state_change('System Start', 'Generator controller initialized')
+
     while True:
+        # Check for state changes and log them
+        current_running = is_running()
+        current_request = is_request_run()
+
+        if current_running != prev_state['running']:
+            log_state_change('Generator Running', 'Yes' if current_running else 'No')
+            prev_state['running'] = current_running
+
+        if current_request != prev_state['run_request']:
+            log_state_change('Run Request', 'Active' if current_request else 'Inactive')
+            prev_state['run_request'] = current_request
+
         if is_request_run():
             # No need for scheduled maintenance if we needed to run
             days_until_maintenance = maintenance_interval
@@ -65,31 +132,49 @@ async def manage_start_stop():
         if is_cool_down_starting():
             cool_down_active = True
             cool_down_end = time.ticks_add(time.ticks_ms(), cool_down_duration)
+            log_state_change('Cool Down', 'Started (15 min)')
         if is_cool_down_finished():
             cool_down_active = False
             # No need for scheduled maintenance if we needed to run
             days_until_maintenance = maintenance_interval
             kill_gen = True
+            log_state_change('Cool Down', 'Finished')
+
+        # Log cool down state changes
+        if cool_down_active != prev_state['cool_down']:
+            prev_state['cool_down'] = cool_down_active
 
         if is_maintenance_starting():
             maintenance_active = True
             maintenance_end = time.ticks_add(time.ticks_ms(), maintenance_duration)
             days_until_maintenance = maintenance_interval
+            log_state_change('Maintenance', 'Started (10 min)')
         if maintenance_active:
             if is_running():
                 relay_start_gen.value(0)
             else:
                 relay_start_gen.value(1)
-                running = True
         if is_maintenance_finished():
             maintenance_active = False
             kill_gen = True
+            log_state_change('Maintenance', 'Finished')
+
+        # Log maintenance state changes
+        if maintenance_active != prev_state['maintenance']:
+            prev_state['maintenance'] = maintenance_active
+
+        # Log days until maintenance changes
+        if days_until_maintenance != prev_state['days']:
+            log_state_change('Maintenance Countdown', f'{days_until_maintenance} days remaining')
+            prev_state['days'] = days_until_maintenance
 
         if kill_gen and is_running():
             relay_kill_gen.value(1)
+            log_state_change('Kill Relay', 'Activated')
         elif kill_gen:
             kill_gen = False
             relay_kill_gen.value(0)
+            log_state_change('Kill Relay', 'Deactivated')
 
         await asyncio.sleep_ms(50)
 
@@ -104,13 +189,53 @@ async def update_leds():
 async def wait_days():
     global days_until_maintenance
     while True:
-        await asyncio.sleep_ms(us_per_day)
-        days_until_maintenance -= 1
+        await asyncio.sleep_ms(ms_per_day)
+        if days_until_maintenance > 0:
+            days_until_maintenance -= 1
+
+# Web server routes
+@app.route('/')
+def index(request):
+    with open('index.html') as f:
+        html = f.read()
+    return Response(body=html, headers={'Content-Type': 'text/html'})
+
+@app.route('/script.js')
+def script_js(request):
+    with open('script.js') as f:
+        js = f.read()
+    return Response(body=js, headers={'Content-Type': 'application/javascript'})
+
+@app.route('/status')
+def get_status(request):
+    return {
+        'running': is_running(),
+        'run_request': is_request_run(),
+        'cool_down': cool_down_active,
+        'maintenance': maintenance_active,
+        'days_until_maintenance': days_until_maintenance
+    }
+
+@app.route('/uptime')
+def get_uptime(request):
+    return {'uptime_ms': time.ticks_ms()}
+
+@app.route('/log')
+def get_log(request):
+    return {'log': state_log}
 
 async def main():
+    print('Starting Generator Controller...')
     t1 = asyncio.create_task(manage_start_stop())
     t2 = asyncio.create_task(update_leds())
     t3 = asyncio.create_task(wait_days())
-    await asyncio.gather(t1, t2, t3)
+    print('Starting web server on http://' + ap.ifconfig()[0])
+    await app.start_server(host='0.0.0.0', port=80)
 
-asyncio.run(main())
+try:
+    print('Starting async event loop...')
+    asyncio.run(main())
+except Exception as e:
+    import sys
+    sys.print_exception(e)
+    print('Error starting server:', e)

@@ -1,0 +1,57 @@
+<html>
+<head>
+    <title>Generator Controller</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        h2 { color: #333; }
+        .status { margin: 10px 0; padding: 10px; background: #e8e8e8; border-radius: 4px; }
+        .status-label { font-weight: bold; }
+        .status-value { float: right; }
+        .indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; }
+        .indicator.on { background: #4CAF50; }
+        .indicator.off { background: #ccc; }
+        .log-section { margin-top: 30px; }
+        .log-container { background: #f8f8f8; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto; }
+        .log-entry { font-family: monospace; font-size: 12px; padding: 5px; border-bottom: 1px solid #e0e0e0; }
+        .log-entry:last-child { border-bottom: none; }
+        .log-time { color: #666; margin-right: 10px; }
+        .log-event { font-weight: bold; color: #333; margin-right: 10px; }
+        .log-details { color: #555; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <h2>Generator Controller Status</h2>
+        <div class='status'>
+            <span class='status-label'>Generator Running:</span>
+            <span class='status-value' id='running'>--</span>
+        </div>
+        <div class='status'>
+            <span class='status-label'>Run Request:</span>
+            <span class='status-value' id='request'>--</span>
+        </div>
+        <div class='status'>
+            <span class='status-label'>Cool Down Active:</span>
+            <span class='status-value' id='cooldown'>--</span>
+        </div>
+        <div class='status'>
+            <span class='status-label'>Maintenance Active:</span>
+            <span class='status-value' id='maintenance'>--</span>
+        </div>
+        <div class='status'>
+            <span class='status-label'>Days Until Maintenance:</span>
+            <span class='status-value' id='days'>--</span>
+        </div>
+        
+        <div class='log-section'>
+            <h2>State Transition Log</h2>
+            <div class='log-container' id='logContainer'>
+                <div class='log-entry'>Loading...</div>
+            </div>
+        </div>
+    </div>
+    <script src='/script.js'></script>
+</body>
+</html>
