@@ -61,6 +61,7 @@ function updateLog() {
         .then(r => r.json())
         .then(data => {
             const logContainer = document.getElementById('logContainer');
+
             if (data.log.length === 0) {
                 logContainer.innerHTML = '<div class="log-entry">No events logged yet</div>';
                 return;
@@ -78,6 +79,10 @@ function updateLog() {
                     '<span class="log-details">' + entry.details + '</span>' +
                     '</div>';
             }).join('');
+        })
+        .catch(e => {
+            console.error('Error updating log:', e);
+            document.getElementById('logContainer').innerHTML = '<div class="log-entry">Error: ' + e.message + '</div>';
         });
 }
 
