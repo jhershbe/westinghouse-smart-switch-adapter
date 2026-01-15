@@ -39,8 +39,9 @@ cool_down_end = 0
 
 ms_per_day = 24 * 60 * 60 * 1000  # one day in milliseconds
 maintenance_active = False
-maintenance_interval = 7 # maintenance days
-days_until_maintenance = maintenance_interval
+maintenance_interval_days = 7  # maintenance days
+days_until_maintenance = maintenance_interval_days
+maintenance_check_time = 0  # When we last checked for day rollover
 maintenance_duration = 10 * 60 * 1000 # 10 minutes
 maintenance_end = 0
 
@@ -56,7 +57,7 @@ prev_state = {
     'run_request': False,
     'cool_down': False,
     'maintenance': False,
-    'days': maintenance_interval,
+    'days': maintenance_interval_days,
     'kill_relay': False,
     'start_relay': False
 }
@@ -88,7 +89,7 @@ def is_cool_down_finished():
     return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
 
 def is_maintenance_starting():
-    return days_until_maintenance == 0
+    return days_until_maintenance <= 0
 
 def is_maintenance_finished():
     return maintenance_active and time.ticks_diff(maintenance_end, time.ticks_ms()) < 0
@@ -98,14 +99,26 @@ async def manage_start_stop():
     global cool_down_end
     global kill_gen
     global days_until_maintenance
+    global maintenance_check_time
     global maintenance_active
     global maintenance_end
     global prev_state
+
+    # Initialize maintenance check time
+    maintenance_check_time = time.ticks_ms()
 
     # Log startup
     log_state_change('System Start', 'Generator controller initialized')
 
     while True:
+        # Check if a day has passed for maintenance countdown
+        current_time = time.ticks_ms()
+        time_since_check = time.ticks_diff(current_time, maintenance_check_time)
+        if time_since_check >= ms_per_day:
+            if days_until_maintenance > 0:
+                days_until_maintenance -= 1
+            maintenance_check_time = current_time
+
         # Check for state changes and log them
         current_running = is_running()
         current_request = is_request_run()
@@ -126,7 +139,7 @@ async def manage_start_stop():
         if is_cool_down_finished():
             cool_down_active = False
             # No need for scheduled maintenance if we needed to run
-            days_until_maintenance = maintenance_interval
+            days_until_maintenance = maintenance_interval_days
             kill_gen = True
             log_state_change('Cool Down', 'Finished')
 
@@ -137,7 +150,7 @@ async def manage_start_stop():
         if is_maintenance_starting():
             maintenance_active = True
             maintenance_end = time.ticks_add(time.ticks_ms(), maintenance_duration)
-            days_until_maintenance = maintenance_interval
+            days_until_maintenance = maintenance_interval_days
             log_state_change('Maintenance', 'Started (10 min)')
 
         # Maintenance relay control - takes priority
@@ -170,7 +183,7 @@ async def manage_start_stop():
         if not maintenance_active:
             if is_request_run():
                 # No need for scheduled maintenance if we needed to run
-                days_until_maintenance = maintenance_interval
+                days_until_maintenance = maintenance_interval_days
                 if is_running():
                     if prev_state['start_relay']:
                         relay_start_gen.value(0)
@@ -213,13 +226,6 @@ async def update_leds():
         led_maintenance.value(maintenance_active)
         await asyncio.sleep_ms(100)
 
-async def wait_days():
-    global days_until_maintenance
-    while True:
-        await asyncio.sleep_ms(ms_per_day)
-        if days_until_maintenance > 0:
-            days_until_maintenance -= 1
-
 # Web server routes
 @app.route('/')
 def index(request):
@@ -235,12 +241,31 @@ def script_js(request):
 
 @app.route('/status')
 def get_status(request):
+    # Calculate time remaining in current day
+    time_since_check = time.ticks_diff(time.ticks_ms(), maintenance_check_time)
+    ms_remaining_today = ms_per_day - time_since_check
+    if ms_remaining_today < 0:
+        ms_remaining_today = 0
+
+    # Total time remaining
+    total_ms = (days_until_maintenance - 1) * ms_per_day + ms_remaining_today if days_until_maintenance > 0 else ms_remaining_today
+
+    # Display days: if we're in the middle of a day, show one less day + hours/minutes
+    display_days = days_until_maintenance - 1 if days_until_maintenance > 0 else 0
+    hours = ms_remaining_today // (60 * 60 * 1000)
+    minutes = (ms_remaining_today % (60 * 60 * 1000)) // (60 * 1000)
+
     return {
         'running': is_running(),
         'run_request': is_request_run(),
         'cool_down': cool_down_active,
         'maintenance': maintenance_active,
-        'days_until_maintenance': days_until_maintenance
+        'maintenance_countdown': {
+            'days': display_days,
+            'hours': hours,
+            'minutes': minutes,
+            'total_ms': total_ms
+        }
     }
 
 @app.route('/uptime')
@@ -255,7 +280,6 @@ async def main():
     print('Starting Generator Controller...')
     t1 = asyncio.create_task(manage_start_stop())
     t2 = asyncio.create_task(update_leds())
-    t3 = asyncio.create_task(wait_days())
     print('Starting web server on http://' + ap.ifconfig()[0])
     await app.start_server(host='0.0.0.0', port=80)
 

@@ -1,5 +1,5 @@
 let currentUptime = 0;
-let devicePowerOnTime = 0;
+let devicePowerOnTime = null;  // null means not initialized yet
 
 function formatDateTime(timestamp) {
     const date = new Date(timestamp);
@@ -28,18 +28,32 @@ function updateStatus() {
             document.getElementById('maintenance').innerHTML = 
                 '<span class="indicator ' + (data.maintenance ? 'on' : 'off') + '"></span>' + 
                 (data.maintenance ? 'Yes' : 'No');
-            document.getElementById('days').textContent = data.days_until_maintenance;
+            var countdown = data.maintenance_countdown;
+            document.getElementById('days').textContent =
+                countdown.days + 'd ' + countdown.hours + 'h ' + countdown.minutes + 'm';
+        })
+        .catch(e => {
+            console.error('Error updating status:', e);
+            // Show error details on the page
+            var errorMsg = 'Error: ' + e.message;
+            document.getElementById('running').textContent = errorMsg;
+            document.getElementById('request').textContent = 'Check WiFi connection';
+            document.getElementById('cooldown').textContent = '';
+            document.getElementById('maintenance').textContent = '';
+            document.getElementById('days').textContent = '';
         });
 }
 
 function updateUptime() {
-    fetch('/uptime')
+    return fetch('/uptime')
         .then(r => r.json())
         .then(data => {
             currentUptime = data.uptime_ms;
             // Calculate when the device powered on (in browser time)
             devicePowerOnTime = Date.now() - currentUptime;
-        });
+            console.log('Uptime:', currentUptime, 'Power-on time:', devicePowerOnTime, 'Now:', Date.now());
+        })
+        .catch(e => console.error('Error updating uptime:', e));
 }
 
 function updateLog() {
