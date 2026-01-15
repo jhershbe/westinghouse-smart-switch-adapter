@@ -118,28 +118,7 @@ async def manage_start_stop():
             log_state_change('Run Request', 'Active' if current_request else 'Inactive')
             prev_state['run_request'] = current_request
 
-        if is_request_run():
-            # No need for scheduled maintenance if we needed to run
-            days_until_maintenance = maintenance_interval
-            if is_running():
-                if prev_state['start_relay']:
-                    relay_start_gen.value(0)
-                    log_state_change('Start Relay', 'Deactivated (already running)')
-                    prev_state['start_relay'] = False
-                cool_down_active = False
-            else:
-                if not prev_state['start_relay']:
-                    relay_start_gen.value(1)
-                    log_state_change('Start Relay', 'Activated (starting generator)')
-                    prev_state['start_relay'] = True
-        else:
-            # never started and don't want it anymore
-            if not is_running():
-                if prev_state['start_relay']:
-                    relay_start_gen.value(0)
-                    log_state_change('Start Relay', 'Deactivated (no run request)')
-                    prev_state['start_relay'] = False
-
+        # Handle cooldown and maintenance FIRST before normal run request logic
         if is_cool_down_starting():
             cool_down_active = True
             cool_down_end = time.ticks_add(time.ticks_ms(), cool_down_duration)
@@ -160,6 +139,8 @@ async def manage_start_stop():
             maintenance_end = time.ticks_add(time.ticks_ms(), maintenance_duration)
             days_until_maintenance = maintenance_interval
             log_state_change('Maintenance', 'Started (10 min)')
+
+        # Maintenance relay control - takes priority
         if maintenance_active:
             if is_running():
                 if prev_state['start_relay']:
@@ -185,6 +166,31 @@ async def manage_start_stop():
             log_state_change('Maintenance Countdown', f'{days_until_maintenance} days remaining')
             prev_state['days'] = days_until_maintenance
 
+        # Normal run request logic (only if not in maintenance mode)
+        if not maintenance_active:
+            if is_request_run():
+                # No need for scheduled maintenance if we needed to run
+                days_until_maintenance = maintenance_interval
+                if is_running():
+                    if prev_state['start_relay']:
+                        relay_start_gen.value(0)
+                        log_state_change('Start Relay', 'Deactivated (already running)')
+                        prev_state['start_relay'] = False
+                    cool_down_active = False
+                else:
+                    if not prev_state['start_relay']:
+                        relay_start_gen.value(1)
+                        log_state_change('Start Relay', 'Activated (starting generator)')
+                        prev_state['start_relay'] = True
+            else:
+                # never started and don't want it anymore
+                if not is_running():
+                    if prev_state['start_relay']:
+                        relay_start_gen.value(0)
+                        log_state_change('Start Relay', 'Deactivated (no run request)')
+                        prev_state['start_relay'] = False
+
+        # Handle kill relay
         if kill_gen and is_running():
             relay_kill_gen.value(1)
             if not prev_state['kill_relay']:
