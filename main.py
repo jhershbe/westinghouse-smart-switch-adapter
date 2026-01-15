@@ -59,7 +59,8 @@ prev_state = {
     'maintenance': False,
     'days': maintenance_interval_days,
     'kill_relay': False,
-    'start_relay': False
+    'start_relay': False,
+    'maintenance_reset': False  # Track if we've reset maintenance for current run
 }
 
 def log_state_change(event, details=''):
@@ -182,8 +183,13 @@ async def manage_start_stop():
         # Normal run request logic (only if not in maintenance mode)
         if not maintenance_active:
             if is_request_run():
-                # No need for scheduled maintenance if we needed to run
-                days_until_maintenance = maintenance_interval_days
+                # Reset maintenance interval when generator is running from a request
+                if is_running() and not prev_state['maintenance_reset']:
+                    days_until_maintenance = maintenance_interval_days
+                    maintenance_check_time = time.ticks_ms()
+                    prev_state['maintenance_reset'] = True
+                    log_state_change('Maintenance Reset', f'Countdown reset to {days_until_maintenance} days (generator running from request)')
+
                 if is_running():
                     if prev_state['start_relay']:
                         relay_start_gen.value(0)
@@ -196,6 +202,10 @@ async def manage_start_stop():
                         log_state_change('Start Relay', 'Activated (starting generator)')
                         prev_state['start_relay'] = True
             else:
+                # Clear the maintenance reset flag when request stops
+                if prev_state['maintenance_reset']:
+                    prev_state['maintenance_reset'] = False
+
                 # never started and don't want it anymore
                 if not is_running():
                     if prev_state['start_relay']:
