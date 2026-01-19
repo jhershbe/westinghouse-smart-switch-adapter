@@ -28,8 +28,10 @@ config = load_config()
 
 # Use config values
 maintenance_interval_days = config["maintenance_interval_days"]
-maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
-cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
+maintenance_duration_minutes = config["maintenance_duration_minutes"]
+maintenance_duration = maintenance_duration_minutes * 60 * 1000
+cool_down_duration_minutes = config["cool_down_duration_minutes"]
+cool_down_duration = cool_down_duration_minutes * 60 * 1000
 
 in_run_sense = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
 in_run_request = machine.Pin(13, machine.Pin.IN, machine.Pin.PULL_UP)
@@ -190,7 +192,7 @@ async def manage_start_stop():
         if is_cool_down_starting():
             cool_down_active = True
             cool_down_end = time.ticks_add(time.ticks_ms(), cool_down_duration)
-            log_state_change('Cool Down', 'Started (15 min)')
+            log_state_change('Cool Down', f'Started ({cool_down_duration_minutes} min)')
         if is_cool_down_finished():
             cool_down_active = False
             # No need for scheduled maintenance if we needed to run
@@ -206,7 +208,7 @@ async def manage_start_stop():
             maintenance_active = True
             maintenance_end = time.ticks_add(time.ticks_ms(), maintenance_duration)
             days_until_maintenance = maintenance_interval_days
-            log_state_change('Maintenance', 'Started (10 min)')
+            log_state_change('Maintenance', f'Started ({maintenance_duration_minutes} min)')
 
         # Maintenance relay control - takes priority
         if maintenance_active:
@@ -382,10 +384,12 @@ def update_config_route(request):
         data = {k: int(v) for k, v in data.items()}
         config.update(data)
         save_config(config)
-        global maintenance_interval_days, maintenance_duration, cool_down_duration
+        global maintenance_interval_days, maintenance_duration, cool_down_duration, maintenance_duration_minutes, cool_down_duration_minutes
         maintenance_interval_days = config["maintenance_interval_days"]
-        maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
-        cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
+        maintenance_duration_minutes = config["maintenance_duration_minutes"]
+        maintenance_duration = maintenance_duration_minutes * 60 * 1000
+        cool_down_duration_minutes = config["cool_down_duration_minutes"]
+        cool_down_duration = cool_down_duration_minutes * 60 * 1000
         return {'status': 'ok'}
     except Exception as e:
         return {'error': str(e)}
