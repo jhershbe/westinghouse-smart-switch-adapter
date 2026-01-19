@@ -12,6 +12,13 @@ function formatDateTime(timestamp) {
     return month + '/' + day + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
 }
 
+function formatUptime(seconds) {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return days + 'd ' + hours + 'h ' + minutes + 'm';
+}
+
 function updateStatus() {
     fetch('/status')
         .then(r => r.json())
@@ -52,6 +59,11 @@ function updateUptime() {
             // Calculate when the device powered on (in browser time)
             devicePowerOnTime = Date.now() - currentUptime;
             console.log('Uptime:', currentUptime, 'Power-on time:', devicePowerOnTime, 'Now:', Date.now());
+            // Update uptime display if present
+            const uptimeDisplay = document.getElementById('uptimeDisplay');
+            if (uptimeDisplay) {
+                uptimeDisplay.textContent = formatUptime(currentUptime / 1000);
+            }
         })
         .catch(e => console.error('Error updating uptime:', e));
 }
@@ -63,6 +75,8 @@ function updateLog() {
     fetch('/log')
         .then(r => r.json())
         .then(data => {
+            currentUptime = data.uptime_ms / 1000;
+            devicePowerOnTime = Date.now() - (currentUptime * 1000);
             const logContainer = document.getElementById('logContainer');
 
             if (data.log.length === 0) {
@@ -92,7 +106,9 @@ function updateLog() {
 // Page-specific initialization
 if (window.location.pathname === '/logpage') {
     // Log page
+    updateUptime();
     updateLog();
+    setInterval(updateUptime, 5000);
     setInterval(updateLog, 2000);
 } else {
     // Main page
