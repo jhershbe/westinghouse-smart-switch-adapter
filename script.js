@@ -38,6 +38,32 @@ function updateStatus() {
             var countdown = data.maintenance_countdown;
             document.getElementById('days').textContent =
                 countdown.days + 'd ' + countdown.hours + 'h ' + countdown.minutes + 'm';
+            document.getElementById('startAttempts').textContent = data.start_attempts;
+            document.getElementById('detectedRuns').textContent = data.detected_runs;
+            if (data.last_start_request) {
+                const timeStr = formatDateTime(devicePowerOnTime + data.last_start_request);
+                document.getElementById('lastStartRequest').textContent = timeStr;
+            } else {
+                document.getElementById('lastStartRequest').textContent = 'None';
+            }
+            if (data.last_kill_action) {
+                const timeStr = formatDateTime(devicePowerOnTime + data.last_kill_action);
+                document.getElementById('lastKillAction').textContent = timeStr;
+            } else {
+                document.getElementById('lastKillAction').textContent = 'None';
+            }
+            if (data.last_run_sense_start) {
+                const timeStr = formatDateTime(devicePowerOnTime + data.last_run_sense_start);
+                document.getElementById('lastRunSenseStart').textContent = timeStr;
+            } else {
+                document.getElementById('lastRunSenseStart').textContent = 'None';
+            }
+            if (data.last_run_sense_end) {
+                const timeStr = formatDateTime(devicePowerOnTime + data.last_run_sense_end);
+                document.getElementById('lastRunSenseEnd').textContent = timeStr;
+            } else {
+                document.getElementById('lastRunSenseEnd').textContent = 'None';
+            }
         })
         .catch(e => {
             console.error('Error updating status:', e);

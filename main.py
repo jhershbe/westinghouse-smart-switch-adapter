@@ -47,6 +47,15 @@ maintenance_end = 0
 
 kill_gen = False
 
+start_attempts = 0
+detected_runs = 0
+last_start_request = 0
+previous_running = False
+previous_request = False
+last_kill_action = 0
+last_run_sense_start = 0
+last_run_sense_end = 0
+
 # State transition logging
 state_log = []
 MAX_LOG_ENTRIES = 50
@@ -104,6 +113,14 @@ async def manage_start_stop():
     global maintenance_active
     global maintenance_end
     global prev_state
+    global start_attempts
+    global detected_runs
+    global last_start_request
+    global previous_running
+    global previous_request
+    global last_kill_action
+    global last_run_sense_start
+    global last_run_sense_end
 
     # Initialize maintenance check time
     maintenance_check_time = time.ticks_ms()
@@ -114,6 +131,17 @@ async def manage_start_stop():
     while True:
         # Check if a day has passed for maintenance countdown
         current_time = time.ticks_ms()
+        running = is_running()
+        if running and not previous_running:
+            detected_runs += 1
+            last_run_sense_start = time.ticks_ms()
+        elif not running and previous_running:
+            last_run_sense_end = time.ticks_ms()
+        previous_running = running
+        request = is_request_run()
+        if request and not previous_request:
+            last_start_request = time.ticks_ms()
+        previous_request = request
         time_since_check = time.ticks_diff(current_time, maintenance_check_time)
         if time_since_check >= ms_per_day:
             if days_until_maintenance > 0:
@@ -163,6 +191,7 @@ async def manage_start_stop():
                     prev_state['start_relay'] = False
             else:
                 if not prev_state['start_relay']:
+                    start_attempts += 1
                     relay_start_gen.value(1)
                     log_state_change('Start Relay', 'Activated (maintenance start)')
                     prev_state['start_relay'] = True
@@ -198,6 +227,7 @@ async def manage_start_stop():
                     cool_down_active = False
                 else:
                     if not prev_state['start_relay']:
+                        start_attempts += 1
                         relay_start_gen.value(1)
                         log_state_change('Start Relay', 'Activated (starting generator)')
                         prev_state['start_relay'] = True
@@ -215,6 +245,7 @@ async def manage_start_stop():
 
         # Handle kill relay
         if kill_gen and is_running():
+            last_kill_action = time.ticks_ms()
             relay_kill_gen.value(1)
             if not prev_state['kill_relay']:
                 log_state_change('Kill Relay', 'Activated')
@@ -275,7 +306,13 @@ def get_status(request):
             'hours': hours,
             'minutes': minutes,
             'total_ms': total_ms
-        }
+        },
+        'start_attempts': start_attempts,
+        'detected_runs': detected_runs,
+        'last_start_request': last_start_request,
+        'last_kill_action': last_kill_action,
+        'last_run_sense_start': last_run_sense_start,
+        'last_run_sense_end': last_run_sense_end
     }
 
 @app.route('/uptime')
