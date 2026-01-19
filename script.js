@@ -57,6 +57,9 @@ function updateUptime() {
 }
 
 function updateLog() {
+    const logContainer = document.getElementById('logContainer');
+    if (!logContainer) return;  // Not on log page
+
     fetch('/log')
         .then(r => r.json())
         .then(data => {
@@ -86,9 +89,15 @@ function updateLog() {
         });
 }
 
-updateStatus();
-updateUptime();
-updateLog();
-setInterval(updateStatus, 1000);
-setInterval(updateUptime, 5000);
-setInterval(updateLog, 2000);
+// Page-specific initialization
+if (window.location.pathname === '/logpage') {
+    // Log page
+    updateLog();
+    setInterval(updateLog, 2000);
+} else {
+    // Main page
+    updateStatus();
+    updateUptime();
+    setInterval(updateStatus, 1000);
+    setInterval(updateUptime, 5000);
+}

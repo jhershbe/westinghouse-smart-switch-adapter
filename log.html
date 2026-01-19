@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generator Controller - Log</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        h2 { color: #333; }
+        .nav { margin-bottom: 20px; }
+        .nav a { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; }
+        .log-container { background: #f8f8f8; padding: 15px; border-radius: 4px; max-height: 600px; overflow-y: auto; }
+        .log-entry { font-family: monospace; font-size: 12px; padding: 5px; border-bottom: 1px solid #e0e0e0; }
+        .log-entry:last-child { border-bottom: none; }
+        .log-time { color: #666; margin-right: 10px; }
+        .log-event { font-weight: bold; color: #333; margin-right: 10px; }
+        .log-details { color: #555; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='nav'>
+            <a href='/'>Back to Status</a>
+        </div>
+        <h2>State Transition Log</h2>
+        <div class='log-container' id='logContainer'>
+            <div class='log-entry'>Loading...</div>
+        </div>
+    </div>
+    <script src='/script.js'></script>
+</body>
+</html>

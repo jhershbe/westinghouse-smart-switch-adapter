@@ -284,7 +284,13 @@ def get_uptime(request):
 
 @app.route('/log')
 def get_log(request):
-    return {'log': state_log}
+    return {'log': state_log, 'uptime_ms': time.ticks_ms()}
+
+@app.route('/logpage')
+def log_page(request):
+    with open('log.html') as f:
+        html = f.read()
+    return Response(body=html, headers={'Content-Type': 'text/html'})
 
 async def main():
     print('Starting Generator Controller...')
