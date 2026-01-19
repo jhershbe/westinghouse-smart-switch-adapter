@@ -1,0 +1,5 @@
+{
+    "maintenance_interval_days": 7,
+    "maintenance_duration_minutes": 10,
+    "cool_down_duration_minutes": 15
+}

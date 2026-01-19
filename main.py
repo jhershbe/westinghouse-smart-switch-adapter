@@ -2,6 +2,34 @@ import machine
 import time
 import asyncio
 import network
+import ujson
+
+CONFIG_FILE = 'config.json'
+
+def load_config():
+    try:
+        with open(CONFIG_FILE) as f:
+            config = ujson.load(f)
+        # Ensure values are ints
+        config = {k: int(v) for k, v in config.items()}
+        return config
+    except:
+        return {
+            "maintenance_interval_days": 7,
+            "maintenance_duration_minutes": 10,
+            "cool_down_duration_minutes": 15
+        }
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        ujson.dump(config, f)
+
+config = load_config()
+
+# Use config values
+maintenance_interval_days = config["maintenance_interval_days"]
+maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
+cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
 
 in_run_sense = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
 in_run_request = machine.Pin(13, machine.Pin.IN, machine.Pin.PULL_UP)
@@ -39,10 +67,8 @@ cool_down_end = 0
 
 ms_per_day = 24 * 60 * 60 * 1000  # one day in milliseconds
 maintenance_active = False
-maintenance_interval_days = 7  # maintenance days
 days_until_maintenance = maintenance_interval_days
 maintenance_check_time = 0  # When we last checked for day rollover
-maintenance_duration = 10 * 60 * 1000 # 10 minutes
 maintenance_end = 0
 
 kill_gen = False
@@ -330,6 +356,39 @@ def log_page(request):
     with open('log.html') as f:
         html = f.read()
     return Response(body=html, headers={'Content-Type': 'text/html'})
+
+@app.route('/config')
+def config_page(request):
+    with open('config.html') as f:
+        html = f.read()
+    return Response(body=html, headers={'Content-Type': 'text/html'})
+
+@app.route('/config/data')
+def get_config(request):
+    return config
+
+def parse_form_data(body):
+    data = {}
+    for pair in body.decode().split('&'):
+        if '=' in pair:
+            k, v = pair.split('=', 1)
+            data[k] = v
+    return data
+
+@app.route('/config/update', methods=['POST'])
+def update_config_route(request):
+    try:
+        data = parse_form_data(request.body)
+        data = {k: int(v) for k, v in data.items()}
+        config.update(data)
+        save_config(config)
+        global maintenance_interval_days, maintenance_duration, cool_down_duration
+        maintenance_interval_days = config["maintenance_interval_days"]
+        maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
+        cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
+        return {'status': 'ok'}
+    except Exception as e:
+        return {'error': str(e)}
 
 async def main():
     print('Starting Generator Controller...')
