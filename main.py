@@ -300,7 +300,9 @@ def get_status(request):
         'running': is_running(),
         'run_request': is_request_run(),
         'cool_down': cool_down_active,
+        'cool_down_remaining': max(0, cool_down_end - time.ticks_ms()) if cool_down_active else 0,
         'maintenance': maintenance_active,
+        'maintenance_remaining': max(0, maintenance_end - time.ticks_ms()) if maintenance_active else 0,
         'maintenance_countdown': {
             'days': display_days,
             'hours': hours,

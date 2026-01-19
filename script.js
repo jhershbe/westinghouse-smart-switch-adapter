@@ -29,12 +29,24 @@ function updateStatus() {
             document.getElementById('request').innerHTML = 
                 '<span class="indicator ' + (data.run_request ? 'on' : 'off') + '"></span>' + 
                 (data.run_request ? 'Yes' : 'No');
-            document.getElementById('cooldown').innerHTML = 
-                '<span class="indicator ' + (data.cool_down ? 'on' : 'off') + '"></span>' + 
-                (data.cool_down ? 'Yes' : 'No');
-            document.getElementById('maintenance').innerHTML = 
-                '<span class="indicator ' + (data.maintenance ? 'on' : 'off') + '"></span>' + 
-                (data.maintenance ? 'Yes' : 'No');
+            if (data.cool_down) {
+                const remaining_ms = data.cool_down_remaining;
+                const minutes = Math.floor(remaining_ms / (60 * 1000));
+                const seconds = Math.floor((remaining_ms % (60 * 1000)) / 1000);
+                const timeStr = minutes + 'm ' + seconds + 's';
+                document.getElementById('cooldown').innerHTML = '<span class="indicator on"></span>Yes (' + timeStr + ' remaining)';
+            } else {
+                document.getElementById('cooldown').innerHTML = '<span class="indicator off"></span>No';
+            }
+            if (data.maintenance) {
+                const remaining_ms = data.maintenance_remaining;
+                const minutes = Math.floor(remaining_ms / (60 * 1000));
+                const seconds = Math.floor((remaining_ms % (60 * 1000)) / 1000);
+                const timeStr = minutes + 'm ' + seconds + 's';
+                document.getElementById('maintenance').innerHTML = '<span class="indicator on"></span>Yes (' + timeStr + ' remaining)';
+            } else {
+                document.getElementById('maintenance').innerHTML = '<span class="indicator off"></span>No';
+            }
             var countdown = data.maintenance_countdown;
             document.getElementById('days').textContent =
                 countdown.days + 'd ' + countdown.hours + 'h ' + countdown.minutes + 'm';
