@@ -49,6 +49,54 @@ Below is the wiring schematic for the Westinghouse Smart Switch Adapter:
 
 ![Wiring Schematic](./schematic.png)
 
+## Web Interface
+
+The controller provides a WiFi access point and web interface for monitoring and testing.
+
+### Connecting to the Web Interface
+1. Connect to the WiFi network: **GenController**
+2. Password: **westinghouse**
+3. Navigate to: **http://192.168.4.1**
+
+### Status Display
+The web interface shows real-time system status:
+
+- **Generator Running**: Indicates whether the generator is currently running (based on the run sense input)
+- **Run Request**: Shows if there's an active request to run the generator (from the external run request input)
+- **Cool Down Active**: Displays when the generator is in cool-down mode after a run
+- **Maintenance Active**: Indicates when the system is performing a scheduled maintenance run
+- **Days Until Maintenance**: Countdown timer showing time remaining until next scheduled maintenance run (format: Xd Xh Xm)
+
+All status indicators update in real-time and include color-coded indicators (green when active, gray when inactive).
+
+### State Transition Log
+The log section displays the last 50 state changes with timestamps. The following events are logged:
+
+**System Events:**
+- System startup and initialization
+
+**Generator State Changes:**
+- Generator running status changes (started/stopped)
+- Run request input status changes (active/inactive)
+
+**Cool Down Cycle:**
+- Cool down started (15 minute duration)
+- Cool down finished
+
+**Maintenance Cycle:**
+- Scheduled maintenance started (10 minute duration)
+- Maintenance finished
+- Maintenance countdown updates (when days remaining changes)
+- Maintenance timer reset (when generator runs from a request, resetting the 7-day countdown)
+
+**Relay Control:**
+- Start relay activated (generator starting)
+- Start relay deactivated (various conditions: already running, no request, maintenance)
+- Kill relay activated (stopping generator after cool down or maintenance)
+- Kill relay deactivated (generator stopped)
+
+Timestamps are automatically converted to your local time zone based on your device's clock. Events are displayed with newest entries first.
+
 ## Usage
 1. Connect the ESP32 pins as described above and in the diagram to your generator's remote start/stop interface and status LEDs.
 2. Flash the ESP32 with MicroPython and upload `main.py`.
