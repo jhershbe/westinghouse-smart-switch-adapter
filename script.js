@@ -1,5 +1,6 @@
 let currentUptime = 0;
 let devicePowerOnTime = null;  // null means not initialized yet
+let sent_sync = false;
 
 function formatDateTime(timestamp) {
     const date = new Date(timestamp);
@@ -75,6 +76,18 @@ function updateStatus() {
                 document.getElementById('lastRunSenseEnd').textContent = timeStr;
             } else {
                 document.getElementById('lastRunSenseEnd').textContent = 'None';
+            }
+            // Sync time once per connection
+            if (!sent_sync) {
+                const now = new Date();
+                const current_minutes = now.getHours() * 60 + now.getMinutes();
+                fetch('/config/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `current_minutes=${current_minutes}`
+                }).then(() => {
+                    sent_sync = true;
+                });
             }
         })
         .catch(e => {

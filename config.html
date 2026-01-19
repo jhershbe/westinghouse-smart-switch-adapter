@@ -35,6 +35,14 @@
                 <label for='cool_down_duration_minutes'>Cool Down Duration (minutes):</label>
                 <input type='number' id='cool_down_duration_minutes' name='cool_down_duration_minutes' min='1' required>
             </div>
+            <div class='config-item'>
+                <label for='maintenance_start_hour'>Maintenance Start Hour (0-23):</label>
+                <input type='number' id='maintenance_start_hour' name='maintenance_start_hour' min='0' max='23' required>
+            </div>
+            <div class='config-item'>
+                <label for='maintenance_start_minute'>Maintenance Start Minute (0-59):</label>
+                <input type='number' id='maintenance_start_minute' name='maintenance_start_minute' min='0' max='59' required>
+            </div>
             <button type='submit' class='save-btn'>Save Configuration</button>
         </form>
     </div>
@@ -46,6 +54,8 @@
                 document.getElementById('maintenance_interval_days').value = data.maintenance_interval_days;
                 document.getElementById('maintenance_duration_minutes').value = data.maintenance_duration_minutes;
                 document.getElementById('cool_down_duration_minutes').value = data.cool_down_duration_minutes;
+                document.getElementById('maintenance_start_hour').value = data.maintenance_start_hour;
+                document.getElementById('maintenance_start_minute').value = data.maintenance_start_minute;
             })
             .catch(e => console.error('Error loading config:', e));
 

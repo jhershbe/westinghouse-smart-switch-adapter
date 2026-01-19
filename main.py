@@ -17,7 +17,9 @@ def load_config():
         return {
             "maintenance_interval_days": 7,
             "maintenance_duration_minutes": 10,
-            "cool_down_duration_minutes": 15
+            "cool_down_duration_minutes": 15,
+            "maintenance_start_hour": 12,
+            "maintenance_start_minute": 0
         }
 
 def save_config(config):
@@ -32,6 +34,17 @@ maintenance_duration_minutes = config["maintenance_duration_minutes"]
 maintenance_duration = maintenance_duration_minutes * 60 * 1000
 cool_down_duration_minutes = config["cool_down_duration_minutes"]
 cool_down_duration = cool_down_duration_minutes * 60 * 1000
+maintenance_start_hour = config["maintenance_start_hour"]
+maintenance_start_minute = config["maintenance_start_minute"]
+
+# Fake RTC
+rtc_synced = True  # Always consider synced, starting from 0
+rtc_base_minutes = 0
+rtc_base_ticks = time.ticks_ms()
+
+def get_current_minutes():
+    elapsed_minutes = (time.ticks_ms() - rtc_base_ticks) // 60000
+    return (rtc_base_minutes + elapsed_minutes) % 1440
 
 in_run_sense = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
 in_run_request = machine.Pin(13, machine.Pin.IN, machine.Pin.PULL_UP)
@@ -127,7 +140,11 @@ def is_cool_down_finished():
     return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
 
 def is_maintenance_starting():
-    return days_until_maintenance <= 0
+    if days_until_maintenance > 0:
+        return False
+    current_minutes = get_current_minutes()
+    configured_minutes = maintenance_start_hour * 60 + maintenance_start_minute
+    return current_minutes >= configured_minutes
 
 def is_maintenance_finished():
     return maintenance_active and time.ticks_diff(maintenance_end, time.ticks_ms()) < 0
@@ -166,6 +183,7 @@ async def manage_start_stop():
         elif not running and previous_running:
             last_run_sense_end = time.ticks_ms()
         previous_running = running
+
         request = is_request_run()
         if request and not previous_request:
             last_start_request = time.ticks_ms()
@@ -310,19 +328,13 @@ def script_js(request):
 
 @app.route('/status')
 def get_status(request):
-    # Calculate time remaining in current day
-    time_since_check = time.ticks_diff(time.ticks_ms(), maintenance_check_time)
-    ms_remaining_today = ms_per_day - time_since_check
-    if ms_remaining_today < 0:
-        ms_remaining_today = 0
-
-    # Total time remaining
-    total_ms = (days_until_maintenance - 1) * ms_per_day + ms_remaining_today if days_until_maintenance > 0 else ms_remaining_today
-
-    # Display days: if we're in the middle of a day, show one less day + hours/minutes
-    display_days = days_until_maintenance - 1 if days_until_maintenance > 0 else 0
-    hours = ms_remaining_today // (60 * 60 * 1000)
-    minutes = (ms_remaining_today % (60 * 60 * 1000)) // (60 * 1000)
+    current_minutes = get_current_minutes()
+    configured_minutes = maintenance_start_hour * 60 + maintenance_start_minute
+    minutes_until_start = (configured_minutes - current_minutes + 1440) % 1440
+    total_minutes = days_until_maintenance * 1440 + minutes_until_start
+    days = total_minutes // 1440
+    hours = (total_minutes % 1440) // 60
+    minutes = total_minutes % 60
 
     return {
         'running': is_running(),
@@ -332,11 +344,13 @@ def get_status(request):
         'maintenance': maintenance_active,
         'maintenance_remaining': max(0, maintenance_end - time.ticks_ms()) if maintenance_active else 0,
         'maintenance_countdown': {
-            'days': display_days,
+            'days': days,
             'hours': hours,
             'minutes': minutes,
-            'total_ms': total_ms
+            'total_minutes': total_minutes
         },
+        'current_time_minutes': current_minutes,
+        'rtc_synced': True,  # Always considered synced
         'start_attempts': start_attempts,
         'detected_runs': detected_runs,
         'last_start_request': last_start_request,
@@ -382,14 +396,27 @@ def update_config_route(request):
     try:
         data = parse_form_data(request.body)
         data = {k: int(v) for k, v in data.items()}
+        old_start_hour = config.get("maintenance_start_hour", 12)
+        old_start_minute = config.get("maintenance_start_minute", 0)
         config.update(data)
         save_config(config)
-        global maintenance_interval_days, maintenance_duration, cool_down_duration, maintenance_duration_minutes, cool_down_duration_minutes
+        global maintenance_interval_days, maintenance_duration, cool_down_duration, maintenance_start_hour, maintenance_start_minute, rtc_synced, rtc_base_minutes, rtc_base_ticks, days_until_maintenance, maintenance_check_time
         maintenance_interval_days = config["maintenance_interval_days"]
-        maintenance_duration_minutes = config["maintenance_duration_minutes"]
-        maintenance_duration = maintenance_duration_minutes * 60 * 1000
-        cool_down_duration_minutes = config["cool_down_duration_minutes"]
-        cool_down_duration = cool_down_duration_minutes * 60 * 1000
+        maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
+        cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
+        maintenance_start_hour = config["maintenance_start_hour"]
+        maintenance_start_minute = config["maintenance_start_minute"]
+        if 'current_minutes' in data:
+            host_minutes = data['current_minutes']
+            current_minutes = get_current_minutes()
+            if abs(current_minutes - host_minutes) > 1:
+                rtc_base_minutes = host_minutes
+                rtc_base_ticks = time.ticks_ms()
+                rtc_synced = True
+        # Reset countdown if start time changed
+        if maintenance_start_hour != old_start_hour or maintenance_start_minute != old_start_minute:
+            days_until_maintenance = maintenance_interval_days
+            maintenance_check_time = time.ticks_ms()
         return {'status': 'ok'}
     except Exception as e:
         return {'error': str(e)}
