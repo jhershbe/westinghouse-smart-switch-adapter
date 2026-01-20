@@ -56,7 +56,7 @@ The controller provides a WiFi access point and web interface for monitoring and
 ### Connecting to the Web Interface
 1. Connect to the WiFi network: **GenController**
 2. Password: **westinghouse**
-3. Navigate to: **http://192.168.4.1**
+3. Navigate to: **http://gencontroller.local** or **http://192.168.4.1**
 
 ### Status Display
 The web interface shows real-time system status:

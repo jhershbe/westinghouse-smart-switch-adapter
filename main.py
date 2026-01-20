@@ -63,11 +63,13 @@ relay_kill_gen.value(0)
 ap = network.WLAN(network.AP_IF)
 ap.active(True)
 ap.config(essid='GenController', password='westinghouse', authmode=network.AUTH_WPA_WPA2_PSK)
+ap.config(hostname='gencontroller')
 
 # Wait for AP to be active
 while not ap.active():
     time.sleep(0.1)
 print('AP active, IP:', ap.ifconfig()[0])
+print('Connect to: http://gencontroller.local')
 
 # Import Microdot after WiFi is initialized
 from microdot import Microdot, Response
@@ -627,8 +629,13 @@ async def main():
     print('Starting Generator Controller...')
     t1 = asyncio.create_task(manage_start_stop())
     t2 = asyncio.create_task(update_leds())
-    print('Starting web server on http://' + ap.ifconfig()[0])
-    await app.start_server(host='0.0.0.0', port=80)
+    print('AP config:', ap.ifconfig())
+    print('Starting web server on http://gencontroller.local or http://' + ap.ifconfig()[0])
+    try:
+        await app.start_server(host='0.0.0.0', port=80)
+    except Exception as e:
+        print('Error in start_server:', e)
+        raise
 
 try:
     print('Starting async event loop...')
