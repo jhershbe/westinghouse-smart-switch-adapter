@@ -13,12 +13,12 @@ This project provides firmware for an ESP32-based adapter that automates the sta
 ## Pin Assignments
 | Function                | ESP32 Pin |
 |-------------------------|-----------|
-| Run Sense Input         | 12        |
 | Run Request Input       | 13        |
 | Run Request LED         | 16        |
 | Running LED             | 17        |
 | Cool Down LED           | 18        |
 | Maintenance LED         | 19        |
+| Run Sense Input         | 27        |
 | Start Generator Relay   | 32        |
 | Kill Generator Relay    | 33        |
 

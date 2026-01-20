@@ -46,12 +46,12 @@ def get_current_minutes():
     elapsed_minutes = (time.ticks_ms() - rtc_base_ticks) // 60000
     return (rtc_base_minutes + elapsed_minutes) % 1440
 
-in_run_sense = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
 in_run_request = machine.Pin(13, machine.Pin.IN, machine.Pin.PULL_UP)
 led_run_request = machine.Pin(16, machine.Pin.OUT)
 led_running = machine.Pin(17, machine.Pin.OUT)
 led_cool_down = machine.Pin(18, machine.Pin.OUT)
 led_maintenance = machine.Pin(19, machine.Pin.OUT)
+in_run_sense = machine.Pin(27, machine.Pin.IN, machine.Pin.PULL_UP)
 relay_start_gen = machine.Pin(32, machine.Pin.OUT)
 relay_kill_gen = machine.Pin(33, machine.Pin.OUT)
 
