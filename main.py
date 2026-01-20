@@ -71,10 +71,127 @@ print('AP active, IP:', ap.ifconfig()[0])
 
 # Import Microdot after WiFi is initialized
 from microdot import Microdot, Response
+from enum import Enum
 
 # Set up Microdot
 app = Microdot()
 Response.default_content_type = 'application/json'
+
+class GeneratorState(Enum):
+    IDLE = "idle"                          # Not running, monitoring for requests/maintenance
+    STARTING = "starting"                   # Activating start relay (pulse)
+    CONFIRM_STARTED = "confirm_started"     # Waiting to see if generator started after pulse
+    RUNNING = "running"                     # Running (normal or maintenance)
+    COOL_DOWN = "cool_down"                 # Running but no request; waiting to stop
+    STOPPING = "stopping"                   # Activating kill relay with delay
+
+class State:
+    def __init__(self, controller):
+        self.controller = controller
+
+    def on_enter(self):
+        pass
+
+    def update(self):
+        pass
+
+    def on_exit(self):
+        pass
+
+class IdleState(State):
+    def update(self):
+        # Check for maintenance start
+        if self.controller.is_maintenance_starting():
+            self.controller.maintenance_end = time.ticks_add(time.ticks_ms(), self.controller.maintenance_duration)
+            self.controller.days_until_maintenance = self.controller.maintenance_interval_days
+            self.controller.maintenance_active = True
+            log_state_change('Maintenance', f'Started ({self.controller.maintenance_duration_minutes} min)')
+            self.controller.transition_to(GeneratorState.STARTING)
+        # Check for run request, only if cooldown expired
+        elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0:
+            self.controller.transition_to(GeneratorState.STARTING)
+        # If already running (e.g., startup), go to running
+        elif self.controller.sensor_manager.is_running_debounced():
+            self.controller.transition_to(GeneratorState.RUNNING)
+
+class StartingState(State):
+    def on_enter(self):
+        self.controller.start_attempts += 1
+        relay_start_gen.value(1)
+        self.controller.start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
+        self.controller.pulse_cooldown = 400  # 20 seconds
+        log_state_change('Start Relay', 'Activated (starting generator)')
+        self.controller.prev_state['start_relay'] = True
+
+    def update(self):
+        if self.controller.sensor_manager.is_running_debounced():
+            self.controller.transition_to(GeneratorState.RUNNING)
+        elif time.ticks_diff(self.controller.start_relay_end_time, time.ticks_ms()) <= 0:
+            # Pulse complete, deactivate
+            relay_start_gen.value(0)
+            log_state_change('Start Relay', 'Deactivated (pulse complete)')
+            self.controller.prev_state['start_relay'] = False
+            # Now wait for the generator to start or cooldown to expire
+            self.controller.confirm_started_start_time = time.ticks_ms()
+            self.controller.transition_to(GeneratorState.CONFIRM_STARTED)
+
+class ConfirmStartedState(State):
+    def on_enter(self):
+        # Start waiting for generator to start, or for cooldown to expire
+        self.wait_start_time = time.ticks_ms()
+
+    def update(self):
+        # If generator started, go to running
+        if self.controller.sensor_manager.is_running_debounced():
+            self.controller.transition_to(GeneratorState.RUNNING)
+        # Wait for cooldown to expire before allowing another attempt
+        elif self.controller.pulse_cooldown == 0:
+            self.controller.transition_to(GeneratorState.IDLE)
+
+class RunningState(State):
+    def on_enter(self):
+        # Reset maintenance if from request
+        if not self.controller.prev_state['maintenance_reset']:
+            self.controller.days_until_maintenance = self.controller.maintenance_interval_days
+            self.controller.maintenance_check_time = time.ticks_ms()
+            self.controller.prev_state['maintenance_reset'] = True
+            log_state_change('Maintenance Reset', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
+
+    def update(self):
+        if not self.controller.sensor_manager.is_request_run():
+            self.controller.transition_to(GeneratorState.COOL_DOWN)
+
+class CoolDownState(State):
+    def on_enter(self):
+        self.controller.cool_down_end = time.ticks_add(time.ticks_ms(), self.controller.cool_down_duration)
+        log_state_change('Cool Down', f'Started ({self.controller.cool_down_duration_minutes} min)')
+
+    def update(self):
+        if time.ticks_diff(self.controller.cool_down_end, time.ticks_ms()) <= 0:
+            self.controller.transition_to(GeneratorState.STOPPING)
+
+class StoppingState(State):
+    def on_enter(self):
+        relay_kill_gen.value(1)
+        self.controller.stopping_waiting_for_stop = True
+        self.controller.stopping_stopped_time = None
+        log_state_change('Kill Relay', 'Activated')
+        self.controller.prev_state['kill_relay'] = True
+
+    def update(self):
+        if self.controller.stopping_waiting_for_stop:
+            if not self.controller.sensor_manager.is_running_debounced():
+                # Generator has stopped, start 2s timer
+                self.controller.stopping_stopped_time = time.ticks_ms()
+                self.controller.stopping_waiting_for_stop = False
+        else:
+            # Already stopped, count 2 seconds
+            if time.ticks_diff(time.ticks_ms(), self.controller.stopping_stopped_time) >= 2000:
+                relay_kill_gen.value(0)
+                log_state_change('Kill Relay', 'Deactivated (delay complete)')
+                self.controller.prev_state['kill_relay'] = False
+                self.controller.transition_to(GeneratorState.IDLE)
+
 
 class SensorManager:
     def __init__(self, in_run_sense_pin, in_run_request_pin):
