@@ -76,6 +76,57 @@ from microdot import Microdot, Response
 app = Microdot()
 Response.default_content_type = 'application/json'
 
+class SensorManager:
+    def __init__(self, in_run_sense_pin, in_run_request_pin):
+        self.in_run_sense = in_run_sense_pin
+        self.in_run_request = in_run_request_pin
+        self.test_override_running = None
+        self.test_override_request = None
+        self.debounce_timer = 0
+        self.debounced_running = False
+        self.previous_debounced_running = False
+
+    def set_override_running(self, override):
+        self.test_override_running = override
+
+    def set_override_request(self, override):
+        self.test_override_request = override
+
+    def _is_running_raw(self):
+        if self.test_override_running is not None:
+            return self.test_override_running
+        return not self.in_run_sense.value()
+
+    def is_request_run(self):
+        if self.test_override_request is not None:
+            return self.test_override_request
+        return not self.in_run_request.value()
+
+    def update_debounce(self):
+        sensor_running = self._is_running_raw()
+        if sensor_running:
+            if not self.debounced_running:
+                self.debounce_timer += 1
+                if self.debounce_timer >= 40:  # 2 seconds debounce
+                    self.debounced_running = True
+                    self.debounce_timer = 0
+        else:
+            self.debounced_running = False
+            self.debounce_timer = 0
+
+    def is_running_debounced(self):
+        return self.debounced_running
+
+    def get_running_transition(self):
+        """Returns (became_running, stopped_running)"""
+        became_running = self.debounced_running and not self.previous_debounced_running
+        stopped_running = not self.debounced_running and self.previous_debounced_running
+        self.previous_debounced_running = self.debounced_running
+        return became_running, stopped_running
+
+# Instantiate SensorManager
+sensor_manager = SensorManager(in_run_sense, in_run_request)
+
 cool_down_active = False
 cool_down_duration = 15 * 60 * 1000 # 15 minutes
 cool_down_end = 0
@@ -98,15 +149,8 @@ last_run_sense_start = 0
 last_run_sense_end = 0
 start_relay_end_time = 0
 pulse_cooldown = 0
-debounce_timer = 0
-debounced_running = False
 kill_relay_delay_active = False
 kill_relay_delay_timer = 0
-previous_debounced_running = False
-
-# Testing overrides
-test_override_running = None  # None = use actual sensor, True/False = override
-test_override_request = None  # None = use actual sensor, True/False = override
 
 # State transition logging
 state_log = []
@@ -138,18 +182,8 @@ def log_state_change(event, details=''):
         state_log.pop(0)
     print(f"[{entry['timestamp']}] {event}: {details}")
 
-def is_running():
-    if test_override_running is not None:
-        return test_override_running
-    return not in_run_sense.value()
-
-def is_request_run():
-    if test_override_request is not None:
-        return test_override_request
-    return not in_run_request.value()
-
 def is_cool_down_starting():
-    return debounced_running and (not is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
+    return sensor_manager.is_running_debounced() and (not sensor_manager.is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
 
 def is_cool_down_finished():
     return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
@@ -176,18 +210,14 @@ async def manage_start_stop():
     global start_attempts
     global detected_runs
     global last_start_request
-    global previous_running
     global previous_request
     global last_kill_action
     global last_run_sense_start
     global last_run_sense_end
     global start_relay_end_time
     global pulse_cooldown
-    global debounce_timer
-    global debounced_running
     global kill_relay_delay_active
     global kill_relay_delay_timer
-    global previous_debounced_running
 
     # Initialize maintenance check time
     maintenance_check_time = time.ticks_ms()
@@ -198,32 +228,23 @@ async def manage_start_stop():
     while True:
         # Check if a day has passed for maintenance countdown
         current_time = time.ticks_ms()
-        sensor_running = is_running()
 
-        # Debounce running signal
-        if sensor_running:
-            if not debounced_running:
-                debounce_timer += 1
-                if debounce_timer >= 40:  # 2 seconds debounce
-                    debounced_running = True
-                    debounce_timer = 0
-        else:
-            debounced_running = False
-            debounce_timer = 0
+        # Update sensor debouncing
+        sensor_manager.update_debounce()
+        debounced_running = sensor_manager.is_running_debounced()
 
         # Count runs based on debounced signal
-        if debounced_running and not previous_debounced_running:
+        became_running, stopped_running = sensor_manager.get_running_transition()
+        if became_running:
             detected_runs += 1
             last_run_sense_start = time.ticks_ms()
-        elif not debounced_running and previous_debounced_running:
+        elif stopped_running:
             last_run_sense_end = time.ticks_ms()
-        previous_debounced_running = debounced_running
 
-        if debounced_running and not previous_running:
+        if became_running:
             pulse_cooldown = 400  # 20 seconds cooldown after start
-        previous_running = debounced_running
 
-        request = is_request_run()
+        request = sensor_manager.is_request_run()
         if request and not previous_request:
             last_start_request = time.ticks_ms()
         previous_request = request
@@ -239,7 +260,7 @@ async def manage_start_stop():
 
         # Check for state changes and log them
         current_running = debounced_running
-        current_request = is_request_run()
+        current_request = sensor_manager.is_request_run()
 
         if current_running != prev_state['running']:
             log_state_change('Generator Running', 'Yes' if current_running else 'No')
@@ -302,7 +323,7 @@ async def manage_start_stop():
 
         # Normal run request logic (only if not in maintenance mode)
         if not maintenance_active:
-            if is_request_run():
+            if sensor_manager.is_request_run():
                 # Reset maintenance interval when generator is running from a request
                 if debounced_running and not prev_state['maintenance_reset']:
                     days_until_maintenance = maintenance_interval_days
@@ -330,7 +351,7 @@ async def manage_start_stop():
                     prev_state['maintenance_reset'] = False
 
                 # never started and don't want it anymore
-                if not is_running():
+                if not sensor_manager.is_running_debounced():
                     if prev_state['start_relay']:
                         relay_start_gen.value(0)
                         log_state_change('Start Relay', 'Deactivated (no run request)')
@@ -366,8 +387,8 @@ async def manage_start_stop():
 
 async def update_leds():
     while True:
-        led_running.value(is_running())
-        led_run_request.value(is_request_run())
+        led_running.value(sensor_manager.is_running_debounced())
+        led_run_request.value(sensor_manager.is_request_run())
         led_cool_down.value(cool_down_active)
         led_maintenance.value(maintenance_active)
         await asyncio.sleep_ms(100)
@@ -396,8 +417,8 @@ def get_status(request):
     minutes = total_minutes % 60
 
     return {
-        'running': debounced_running,
-        'run_request': is_request_run(),
+        'running': sensor_manager.is_running_debounced(),
+        'run_request': sensor_manager.is_request_run(),
         'cool_down': cool_down_active,
         'cool_down_remaining': max(0, cool_down_end - time.ticks_ms()) if cool_down_active else 0,
         'maintenance': maintenance_active,
@@ -494,29 +515,27 @@ def test_force_maintenance(request):
 
 @app.route('/test/override_running', methods=['POST'])
 def test_override_running_endpoint(request):
-    global test_override_running
     data = request.json
     override = data.get('override')  # True, False, or None
     if override == 'none' or override is None:
-        test_override_running = None
+        sensor_manager.set_override_running(None)
         log_state_change('TEST', 'Cleared running override (using sensor)')
     else:
-        test_override_running = bool(override)
-        log_state_change('TEST', f'Override running = {test_override_running}')
-    return {'status': 'ok', 'override': test_override_running}
+        sensor_manager.set_override_running(bool(override))
+        log_state_change('TEST', f'Override running = {bool(override)}')
+    return {'status': 'ok', 'override': sensor_manager.test_override_running}
 
 @app.route('/test/override_request', methods=['POST'])
 def test_override_request_endpoint(request):
-    global test_override_request
     data = request.json
     override = data.get('override')  # True, False, or None
     if override == 'none' or override is None:
-        test_override_request = None
+        sensor_manager.set_override_request(None)
         log_state_change('TEST', 'Cleared request override (using sensor)')
     else:
-        test_override_request = bool(override)
-        log_state_change('TEST', f'Override request = {test_override_request}')
-    return {'status': 'ok', 'override': test_override_request}
+        sensor_manager.set_override_request(bool(override))
+        log_state_change('TEST', f'Override request = {bool(override)}')
+    return {'status': 'ok', 'override': sensor_manager.test_override_request}
 
 async def main():
     print('Starting Generator Controller...')
