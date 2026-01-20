@@ -96,6 +96,13 @@ previous_request = False
 last_kill_action = 0
 last_run_sense_start = 0
 last_run_sense_end = 0
+start_relay_end_time = 0
+pulse_cooldown = 0
+debounce_timer = 0
+debounced_running = False
+kill_relay_delay_active = False
+kill_relay_delay_timer = 0
+previous_debounced_running = False
 
 # Testing overrides
 test_override_running = None  # None = use actual sensor, True/False = override
@@ -142,7 +149,7 @@ def is_request_run():
     return not in_run_request.value()
 
 def is_cool_down_starting():
-    return is_running() and (not is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
+    return debounced_running and (not is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
 
 def is_cool_down_finished():
     return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
@@ -174,6 +181,13 @@ async def manage_start_stop():
     global last_kill_action
     global last_run_sense_start
     global last_run_sense_end
+    global start_relay_end_time
+    global pulse_cooldown
+    global debounce_timer
+    global debounced_running
+    global kill_relay_delay_active
+    global kill_relay_delay_timer
+    global previous_debounced_running
 
     # Initialize maintenance check time
     maintenance_check_time = time.ticks_ms()
@@ -184,13 +198,30 @@ async def manage_start_stop():
     while True:
         # Check if a day has passed for maintenance countdown
         current_time = time.ticks_ms()
-        running = is_running()
-        if running and not previous_running:
+        sensor_running = is_running()
+
+        # Debounce running signal
+        if sensor_running:
+            if not debounced_running:
+                debounce_timer += 1
+                if debounce_timer >= 40:  # 2 seconds debounce
+                    debounced_running = True
+                    debounce_timer = 0
+        else:
+            debounced_running = False
+            debounce_timer = 0
+
+        # Count runs based on debounced signal
+        if debounced_running and not previous_debounced_running:
             detected_runs += 1
             last_run_sense_start = time.ticks_ms()
-        elif not running and previous_running:
+        elif not debounced_running and previous_debounced_running:
             last_run_sense_end = time.ticks_ms()
-        previous_running = running
+        previous_debounced_running = debounced_running
+
+        if debounced_running and not previous_running:
+            pulse_cooldown = 400  # 20 seconds cooldown after start
+        previous_running = debounced_running
 
         request = is_request_run()
         if request and not previous_request:
@@ -202,8 +233,12 @@ async def manage_start_stop():
                 days_until_maintenance -= 1
             maintenance_check_time = current_time
 
+        # Update pulse cooldown
+        if pulse_cooldown > 0:
+            pulse_cooldown -= 1
+
         # Check for state changes and log them
-        current_running = is_running()
+        current_running = debounced_running
         current_request = is_request_run()
 
         if current_running != prev_state['running']:
@@ -238,15 +273,17 @@ async def manage_start_stop():
 
         # Maintenance relay control - takes priority
         if maintenance_active:
-            if is_running():
+            if debounced_running:
                 if prev_state['start_relay']:
                     relay_start_gen.value(0)
                     log_state_change('Start Relay', 'Deactivated (maintenance - already running)')
                     prev_state['start_relay'] = False
             else:
-                if not prev_state['start_relay']:
+                if not prev_state['start_relay'] and pulse_cooldown == 0:
                     start_attempts += 1
                     relay_start_gen.value(1)
+                    start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
+                    pulse_cooldown = 400  # 20 seconds cooldown
                     log_state_change('Start Relay', 'Activated (maintenance start)')
                     prev_state['start_relay'] = True
         if is_maintenance_finished():
@@ -267,22 +304,24 @@ async def manage_start_stop():
         if not maintenance_active:
             if is_request_run():
                 # Reset maintenance interval when generator is running from a request
-                if is_running() and not prev_state['maintenance_reset']:
+                if debounced_running and not prev_state['maintenance_reset']:
                     days_until_maintenance = maintenance_interval_days
                     maintenance_check_time = time.ticks_ms()
                     prev_state['maintenance_reset'] = True
                     log_state_change('Maintenance Reset', f'Countdown reset to {days_until_maintenance} days (generator running from request)')
 
-                if is_running():
+                if debounced_running:
                     if prev_state['start_relay']:
                         relay_start_gen.value(0)
                         log_state_change('Start Relay', 'Deactivated (already running)')
                         prev_state['start_relay'] = False
                     cool_down_active = False
                 else:
-                    if not prev_state['start_relay']:
+                    if not prev_state['start_relay'] and pulse_cooldown == 0:
                         start_attempts += 1
                         relay_start_gen.value(1)
+                        start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
+                        pulse_cooldown = 400  # 20 seconds cooldown
                         log_state_change('Start Relay', 'Activated (starting generator)')
                         prev_state['start_relay'] = True
             else:
@@ -298,18 +337,30 @@ async def manage_start_stop():
                         prev_state['start_relay'] = False
 
         # Handle kill relay
-        if kill_gen and is_running():
+        if kill_gen and debounced_running:
             last_kill_action = time.ticks_ms()
             relay_kill_gen.value(1)
             if not prev_state['kill_relay']:
                 log_state_change('Kill Relay', 'Activated')
                 prev_state['kill_relay'] = True
         elif kill_gen:
-            kill_gen = False
-            relay_kill_gen.value(0)
-            if prev_state['kill_relay']:
-                log_state_change('Kill Relay', 'Deactivated')
-                prev_state['kill_relay'] = False
+            if not kill_relay_delay_active:
+                kill_relay_delay_active = True
+                kill_relay_delay_timer = 0
+            kill_relay_delay_timer += 1
+            if kill_relay_delay_timer >= 40:  # 2 seconds delay
+                kill_gen = False
+                relay_kill_gen.value(0)
+                kill_relay_delay_active = False
+                if prev_state['kill_relay']:
+                    log_state_change('Kill Relay', 'Deactivated (delay complete)')
+                    prev_state['kill_relay'] = False
+
+        # Check for start relay pulse completion
+        if prev_state['start_relay'] and time.ticks_diff(start_relay_end_time, time.ticks_ms()) <= 0:
+            relay_start_gen.value(0)
+            log_state_change('Start Relay', 'Deactivated (pulse complete)')
+            prev_state['start_relay'] = False
 
         await asyncio.sleep_ms(50)
 
@@ -345,7 +396,7 @@ def get_status(request):
     minutes = total_minutes % 60
 
     return {
-        'running': is_running(),
+        'running': debounced_running,
         'run_request': is_request_run(),
         'cool_down': cool_down_active,
         'cool_down_remaining': max(0, cool_down_end - time.ticks_ms()) if cool_down_active else 0,
