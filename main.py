@@ -376,28 +376,8 @@ def is_maintenance_finished():
     return maintenance_active and time.ticks_diff(maintenance_end, time.ticks_ms()) < 0
 
 async def manage_start_stop():
-    global cool_down_active
-    global cool_down_end
-    global kill_gen
-    global days_until_maintenance
-    global maintenance_check_time
-    global maintenance_active
-    global maintenance_end
-    global prev_state
-    global start_attempts
-    global detected_runs
-    global last_start_request
-    global previous_request
-    global last_kill_action
-    global last_run_sense_start
-    global last_run_sense_end
-    global start_relay_end_time
-    global pulse_cooldown
-    global kill_relay_delay_active
-    global kill_relay_delay_timer
-
     # Initialize maintenance check time
-    maintenance_check_time = time.ticks_ms()
+    controller.maintenance_check_time = time.ticks_ms()
 
     # Log startup
     log_state_change('System Start', 'Generator controller initialized')
@@ -405,160 +385,89 @@ async def manage_start_stop():
     while True:
         # Check if a day has passed for maintenance countdown
         current_time = time.ticks_ms()
+        time_since_check = time.ticks_diff(current_time, controller.maintenance_check_time)
+        if time_since_check >= ms_per_day:
+            if controller.days_until_maintenance > 0:
+                controller.days_until_maintenance -= 1
+            controller.maintenance_check_time = current_time
 
         # Update sensor debouncing
-        sensor_manager.update_debounce()
-        debounced_running = sensor_manager.is_running_debounced()
+        controller.sensor_manager.update_debounce()
+        debounced_running = controller.sensor_manager.is_running_debounced()
 
         # Count runs based on debounced signal
-        became_running, stopped_running = sensor_manager.get_running_transition()
+        became_running, stopped_running = controller.sensor_manager.get_running_transition()
         if became_running:
-            detected_runs += 1
-            last_run_sense_start = time.ticks_ms()
+            controller.detected_runs += 1
+            controller.last_run_sense_start = time.ticks_ms()
         elif stopped_running:
-            last_run_sense_end = time.ticks_ms()
+            controller.last_run_sense_end = time.ticks_ms()
 
         if became_running:
-            pulse_cooldown = 400  # 20 seconds cooldown after start
+            controller.pulse_cooldown = 400  # 20 seconds cooldown after start
 
-        request = sensor_manager.is_request_run()
+        request = controller.sensor_manager.is_request_run()
         if request and not previous_request:
-            last_start_request = time.ticks_ms()
+            controller.last_start_request = time.ticks_ms()
         previous_request = request
-        time_since_check = time.ticks_diff(current_time, maintenance_check_time)
-        if time_since_check >= ms_per_day:
-            if days_until_maintenance > 0:
-                days_until_maintenance -= 1
-            maintenance_check_time = current_time
 
-        # Update pulse cooldown
-        if pulse_cooldown > 0:
-            pulse_cooldown -= 1
+        # Update controller (handles state machine)
+        controller.update()
 
-        # Check for state changes and log them
-        current_running = debounced_running
-        current_request = sensor_manager.is_request_run()
-
-        if current_running != prev_state['running']:
-            log_state_change('Generator Running', 'Yes' if current_running else 'No')
-            prev_state['running'] = current_running
-
-        if current_request != prev_state['run_request']:
-            log_state_change('Run Request', 'Active' if current_request else 'Inactive')
-            prev_state['run_request'] = current_request
-
-        # Handle cooldown and maintenance FIRST before normal run request logic
+        # Handle cooldown and maintenance (legacy logic, may be moved to states)
         if is_cool_down_starting():
-            cool_down_active = True
-            cool_down_end = time.ticks_add(time.ticks_ms(), cool_down_duration)
-            log_state_change('Cool Down', f'Started ({cool_down_duration_minutes} min)')
+            controller.cool_down_active = True
+            controller.cool_down_end = time.ticks_add(time.ticks_ms(), controller.cool_down_duration)
+            log_state_change('Cool Down', f'Started ({controller.cool_down_duration_minutes} min)')
         if is_cool_down_finished():
-            cool_down_active = False
-            # No need for scheduled maintenance if we needed to run
-            days_until_maintenance = maintenance_interval_days
-            kill_gen = True
+            controller.cool_down_active = False
+            controller.days_until_maintenance = controller.maintenance_interval_days
+            controller.kill_gen = True
             log_state_change('Cool Down', 'Finished')
 
         # Log cool down state changes
-        if cool_down_active != prev_state['cool_down']:
-            prev_state['cool_down'] = cool_down_active
+        if controller.cool_down_active != controller.prev_state['cool_down']:
+            controller.prev_state['cool_down'] = controller.cool_down_active
 
         if is_maintenance_starting():
-            maintenance_active = True
-            maintenance_end = time.ticks_add(time.ticks_ms(), maintenance_duration)
-            days_until_maintenance = maintenance_interval_days
-            log_state_change('Maintenance', f'Started ({maintenance_duration_minutes} min)')
+            controller.maintenance_active = True
+            controller.maintenance_end = time.ticks_add(time.ticks_ms(), controller.maintenance_duration)
+            controller.days_until_maintenance = controller.maintenance_interval_days
+            log_state_change('Maintenance', f'Started ({controller.maintenance_duration_minutes} min)')
 
-        # Maintenance relay control - takes priority
-        if maintenance_active:
-            if debounced_running:
-                if prev_state['start_relay']:
-                    relay_start_gen.value(0)
-                    log_state_change('Start Relay', 'Deactivated (maintenance - already running)')
-                    prev_state['start_relay'] = False
-            else:
-                if not prev_state['start_relay'] and pulse_cooldown == 0:
-                    start_attempts += 1
-                    relay_start_gen.value(1)
-                    start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
-                    pulse_cooldown = 400  # 20 seconds cooldown
-                    log_state_change('Start Relay', 'Activated (maintenance start)')
-                    prev_state['start_relay'] = True
         if is_maintenance_finished():
-            maintenance_active = False
-            kill_gen = True
+            controller.maintenance_active = False
+            controller.kill_gen = True
             log_state_change('Maintenance', 'Finished')
 
         # Log maintenance state changes
-        if maintenance_active != prev_state['maintenance']:
-            prev_state['maintenance'] = maintenance_active
+        if controller.maintenance_active != controller.prev_state['maintenance']:
+            controller.prev_state['maintenance'] = controller.maintenance_active
 
         # Log days until maintenance changes
-        if days_until_maintenance != prev_state['days']:
-            log_state_change('Maintenance Countdown', f'{days_until_maintenance} days remaining')
-            prev_state['days'] = days_until_maintenance
+        if controller.days_until_maintenance != controller.prev_state['days']:
+            log_state_change('Maintenance Countdown', f'{controller.days_until_maintenance} days remaining')
+            controller.prev_state['days'] = controller.days_until_maintenance
 
-        # Normal run request logic (only if not in maintenance mode)
-        if not maintenance_active:
-            if sensor_manager.is_request_run():
-                # Reset maintenance interval when generator is running from a request
-                if debounced_running and not prev_state['maintenance_reset']:
-                    days_until_maintenance = maintenance_interval_days
-                    maintenance_check_time = time.ticks_ms()
-                    prev_state['maintenance_reset'] = True
-                    log_state_change('Maintenance Reset', f'Countdown reset to {days_until_maintenance} days (generator running from request)')
-
-                if debounced_running:
-                    if prev_state['start_relay']:
-                        relay_start_gen.value(0)
-                        log_state_change('Start Relay', 'Deactivated (already running)')
-                        prev_state['start_relay'] = False
-                    cool_down_active = False
-                else:
-                    if not prev_state['start_relay'] and pulse_cooldown == 0:
-                        start_attempts += 1
-                        relay_start_gen.value(1)
-                        start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
-                        pulse_cooldown = 400  # 20 seconds cooldown
-                        log_state_change('Start Relay', 'Activated (starting generator)')
-                        prev_state['start_relay'] = True
-            else:
-                # Clear the maintenance reset flag when request stops
-                if prev_state['maintenance_reset']:
-                    prev_state['maintenance_reset'] = False
-
-                # never started and don't want it anymore
-                if not sensor_manager.is_running_debounced():
-                    if prev_state['start_relay']:
-                        relay_start_gen.value(0)
-                        log_state_change('Start Relay', 'Deactivated (no run request)')
-                        prev_state['start_relay'] = False
-
-        # Handle kill relay
-        if kill_gen and debounced_running:
-            last_kill_action = time.ticks_ms()
+        # Handle kill relay (legacy, may be moved to states)
+        if controller.kill_gen and debounced_running:
+            controller.last_kill_action = time.ticks_ms()
             relay_kill_gen.value(1)
-            if not prev_state['kill_relay']:
+            if not controller.prev_state['kill_relay']:
                 log_state_change('Kill Relay', 'Activated')
-                prev_state['kill_relay'] = True
-        elif kill_gen:
-            if not kill_relay_delay_active:
-                kill_relay_delay_active = True
-                kill_relay_delay_timer = 0
-            kill_relay_delay_timer += 1
-            if kill_relay_delay_timer >= 40:  # 2 seconds delay
-                kill_gen = False
+                controller.prev_state['kill_relay'] = True
+        elif controller.kill_gen:
+            if not controller.kill_relay_delay_active:
+                controller.kill_relay_delay_active = True
+                controller.kill_relay_delay_timer = 0
+            controller.kill_relay_delay_timer += 1
+            if controller.kill_relay_delay_timer >= 40:  # 2 seconds delay
+                controller.kill_gen = False
                 relay_kill_gen.value(0)
-                kill_relay_delay_active = False
-                if prev_state['kill_relay']:
+                controller.kill_relay_delay_active = False
+                if controller.prev_state['kill_relay']:
                     log_state_change('Kill Relay', 'Deactivated (delay complete)')
-                    prev_state['kill_relay'] = False
-
-        # Check for start relay pulse completion
-        if prev_state['start_relay'] and time.ticks_diff(start_relay_end_time, time.ticks_ms()) <= 0:
-            relay_start_gen.value(0)
-            log_state_change('Start Relay', 'Deactivated (pulse complete)')
-            prev_state['start_relay'] = False
+                    controller.prev_state['kill_relay'] = False
 
         await asyncio.sleep_ms(50)
 
