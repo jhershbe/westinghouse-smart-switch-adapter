@@ -77,6 +77,66 @@ from enum import Enum
 app = Microdot()
 Response.default_content_type = 'application/json'
 
+class GeneratorController:
+    def __init__(self):
+        self.sensor_manager = sensor_manager
+        self.maintenance_interval_days = maintenance_interval_days
+        self.maintenance_duration_minutes = maintenance_duration_minutes
+        self.maintenance_duration = maintenance_duration
+        self.cool_down_duration_minutes = cool_down_duration_minutes
+        self.cool_down_duration = cool_down_duration
+        self.maintenance_start_hour = maintenance_start_hour
+        self.maintenance_start_minute = maintenance_start_minute
+        self.days_until_maintenance = days_until_maintenance
+        self.maintenance_check_time = maintenance_check_time
+        self.maintenance_end = maintenance_end
+        self.maintenance_active = maintenance_active
+        self.cool_down_end = cool_down_end
+        self.cool_down_active = cool_down_active
+        self.kill_gen = kill_gen
+        self.start_attempts = start_attempts
+        self.detected_runs = detected_runs
+        self.last_start_request = last_start_request
+        self.last_kill_action = last_kill_action
+        self.last_run_sense_start = last_run_sense_start
+        self.last_run_sense_end = last_run_sense_end
+        self.start_relay_end_time = start_relay_end_time
+        self.pulse_cooldown = pulse_cooldown
+        self.kill_relay_delay_active = kill_relay_delay_active
+        self.kill_relay_delay_timer = kill_relay_delay_timer
+        self.prev_state = prev_state
+        self.state_log = state_log
+        self.stopping_waiting_for_stop = True
+        self.stopping_stopped_time = None
+        self.current_state = None
+        self.state_map = {
+            GeneratorState.IDLE: IdleState(self),
+            GeneratorState.STARTING: StartingState(self),
+            GeneratorState.CONFIRM_STARTED: ConfirmStartedState(self),
+            GeneratorState.RUNNING: RunningState(self),
+            GeneratorState.COOL_DOWN: CoolDownState(self),
+            GeneratorState.STOPPING: StoppingState(self),
+        }
+        self.transition_to(GeneratorState.IDLE)
+
+    def transition_to(self, state):
+        if self.current_state:
+            self.current_state.on_exit()
+        self.current_state = self.state_map[state]
+        self.current_state.on_enter()
+
+    def is_maintenance_starting(self):
+        return is_maintenance_starting()
+
+    def update(self):
+        # Update pulse cooldown
+        if self.pulse_cooldown > 0:
+            self.pulse_cooldown -= 1
+        self.current_state.update()
+
+# Instantiate the controller
+controller = GeneratorController()
+
 class GeneratorState(Enum):
     IDLE = "idle"                          # Not running, monitoring for requests/maintenance
     STARTING = "starting"                   # Activating start relay (pulse)
