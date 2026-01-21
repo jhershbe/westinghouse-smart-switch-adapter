@@ -197,7 +197,6 @@ function forceMaintenance() {
     })
     .then(r => r.json())
     .then(data => {
-        alert('Maintenance forced! Check status and log.');
         updateStatus();
         updateLog();
     })
@@ -213,7 +212,6 @@ function overrideRunning(value) {
     .then(r => r.json())
     .then(data => {
         const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
-        alert('Running override: ' + msg);
         updateStatus();
         updateLog();
     })
@@ -229,7 +227,6 @@ function overrideRequest(value) {
     .then(r => r.json())
     .then(data => {
         const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
-        alert('Request override: ' + msg);
         updateStatus();
         updateLog();
     })
