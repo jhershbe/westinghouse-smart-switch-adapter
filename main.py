@@ -79,6 +79,14 @@ from microdot import Microdot, Response, send_file
 app = Microdot()
 Response.default_content_type = 'application/json'
 
+class GeneratorState:
+    IDLE = "idle"                          # Not running, monitoring for requests/maintenance
+    STARTING = "starting"                   # Activating start relay (pulse)
+    CONFIRM_STARTED = "confirm_started"     # Waiting to see if generator started after pulse
+    RUNNING = "running"                     # Running (normal or maintenance)
+    COOL_DOWN = "cool_down"                 # Running but no request; waiting to stop
+    STOPPING = "stopping"                   # Activating kill relay with delay
+
 class GeneratorController:
     def __init__(self):
         self.sensor_manager = sensor_manager
@@ -138,14 +146,6 @@ class GeneratorController:
 
 # Instantiate the controller
 controller = GeneratorController()
-
-class GeneratorState:
-    IDLE = "idle"                          # Not running, monitoring for requests/maintenance
-    STARTING = "starting"                   # Activating start relay (pulse)
-    CONFIRM_STARTED = "confirm_started"     # Waiting to see if generator started after pulse
-    RUNNING = "running"                     # Running (normal or maintenance)
-    COOL_DOWN = "cool_down"                 # Running but no request; waiting to stop
-    STOPPING = "stopping"                   # Activating kill relay with delay
 
 class State:
     def __init__(self, controller):
