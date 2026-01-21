@@ -30,7 +30,6 @@ def save_config(config):
 config = load_config()
 
 # Fake RTC
-rtc_synced = True  # Always consider synced, starting from 0
 rtc_base_minutes = 0
 rtc_base_ticks = time.ticks_ms()
 
@@ -168,7 +167,6 @@ class GeneratorController:
         yield ',"minutes":' + str(total_minutes % 60)
         yield ',"total_minutes":' + str(total_minutes) + '}'
         yield ',"current_time_minutes":' + str(current_minutes)
-        yield ',"rtc_synced":true'
         yield ',"start_attempts":' + str(self.start_attempts)
         yield ',"detected_runs":' + str(self.detected_runs)
         yield ',"last_start_request":' + str(self.last_start_request)
@@ -546,13 +544,12 @@ def update_config_route(request):
         controller.maintenance_start_minute = config["maintenance_start_minute"]
 
         if 'current_minutes' in data:
-            global rtc_base_minutes, rtc_base_ticks, rtc_synced
+            global rtc_base_minutes, rtc_base_ticks
             host_minutes = data['current_minutes']
             current_minutes = get_current_minutes()
             if abs(current_minutes - host_minutes) > 1:
                 rtc_base_minutes = host_minutes
                 rtc_base_ticks = time.ticks_ms()
-                rtc_synced = True
 
         # Reset countdown if start time changed
         if controller.maintenance_start_hour != old_start_hour or controller.maintenance_start_minute != old_start_minute:
