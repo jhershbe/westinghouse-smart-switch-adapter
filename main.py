@@ -611,6 +611,14 @@ def test_override_request_endpoint(request):
         print('[ERROR] /test/override_request route:', e)
         return {'error': str(e)}
 
+@app.route('/style.css')
+def style_css(request):
+    try:
+        return send_file('style.css')
+    except Exception as e:
+        print('[ERROR] /style.css route:', e)
+        return Response(body='Error', status_code=500)
+
 async def main():
     print('Starting Generator Controller...')
     t1 = asyncio.create_task(manage_start_stop())

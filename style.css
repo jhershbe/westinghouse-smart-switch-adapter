@@ -1,0 +1,220 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f0f0f0;
+}
+
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+h2 {
+    color: #333;
+}
+
+.nav {
+    margin-bottom: 20px;
+}
+
+.nav a {
+    display: inline-block;
+    padding: 10px 20px;
+    background: #0078D4;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+
+.nav a:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.config-item {
+    margin: 15px 0;
+}
+
+.config-item label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.config-item input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.save-btn {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    background: #28a745; /* Green color for save button */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    text-decoration: none; /* Remove underline for buttons with hrefs */
+}
+
+.save-btn:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.test-section {
+    margin-top: 30px;
+    padding: 15px;
+    background: #fff3cd;
+    border: 2px solid #ffc107;
+    border-radius: 4px;
+}
+
+.test-section h3 {
+    margin-top: 0;
+    color: #856404;
+}
+
+.test-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.button-primary {
+    background: #6c757d; /* Restore to neutral gray */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    text-decoration: none; /* Remove underline for buttons with hrefs */
+}
+
+.button-secondary {
+    background: #adb5bd; /* Lighter gray */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    text-decoration: none; /* Remove underline for buttons with hrefs */
+}
+
+.button-tertiary {
+    background: #dee2e6; /* Even lighter gray */
+    color: #212529; /* Dark text for contrast */
+    border: none;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    text-decoration: none; /* Remove underline for buttons with hrefs */
+}
+
+.button-primary:active, .button-secondary:active, .button-tertiary:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 10px 0;
+    padding: 10px;
+    background: #e8e8e8;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+.status-label {
+    font-weight: bold;
+    color: #333;
+}
+
+.status-value {
+    display: inline-flex; /* Ensure the text and LED are on the same line */
+    align-items: center;
+    font-weight: normal;
+    color: #555;
+}
+
+.status-value.indicator {
+    display: inline-flex; /* Ensure the text and LED are on the same line */
+    align-items: center;
+    font-weight: normal;
+    color: #555;
+}
+
+.status-value.indicator::after {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-left: 5px; /* Add space between text and LED */
+    background: #ccc; /* Default off state */
+}
+
+.status-value.indicator.on::after {
+    background: #00FF00; /* Brighter green for on state */
+}
+
+.status-value.indicator.off::after {
+    background: #2E7D32; /* Dark green for off state */
+}
+
+.log-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f8f9fa; /* Light background for logs */
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 14px;
+    color: #333;
+}
+
+.log-entry {
+    font-family: monospace;
+    font-size: 12px;
+    padding: 5px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: #666;
+    margin-right: 10px;
+}
+
+.log-event {
+    font-weight: bold;
+    color: #333;
+    margin-right: 10px;
+}
+
+.log-details {
+    color: #555;
+}

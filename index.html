@@ -2,51 +2,38 @@
 <head>
     <title>Generator Controller</title>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
-        h2 { color: #333; }
-        .status { margin: 10px 0; padding: 10px; background: #e8e8e8; border-radius: 4px; }
-        .status-label { font-weight: bold; }
-        .status-value { float: right; }
-        .indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; }
-        .indicator.on { background: #4CAF50; }
-        .indicator.off { background: #ccc; }
-        .log-section { margin-top: 30px; }
-        .log-container { background: #f8f8f8; padding: 15px; border-radius: 4px; max-height: 400px; overflow-y: auto; }
-        .log-entry { font-family: monospace; font-size: 12px; padding: 5px; border-bottom: 1px solid #e0e0e0; }
-        .log-entry:last-child { border-bottom: none; }
-        .log-time { color: #666; margin-right: 10px; }
-        .log-event { font-weight: bold; color: #333; margin-right: 10px; }
-        .log-details { color: #555; }
-        .test-section { margin-top: 30px; padding: 15px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 4px; }
-        .test-section h3 { margin-top: 0; color: #856404; }
-        .test-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-        .test-button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        .test-button.warning { background: #ff9800; color: white; }
-        .test-button.danger { background: #f44336; color: white; }
-        .test-button.success { background: #4CAF50; color: white; }
-        .test-button:hover { opacity: 0.8; }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class='container'>
         <h2>Generator Controller Status</h2>
         <div class='status'>
             <span class='status-label'>Generator Running:</span>
-            <span class='status-value' id='running'>--</span>
+            <span class='status-value indicator' id='running'>
+                <span class='indicator'></span>
+                <span class='status-text'>--</span>
+            </span>
         </div>
         <div class='status'>
             <span class='status-label'>Run Request:</span>
-            <span class='status-value' id='request'>--</span>
+            <span class='status-value indicator' id='request'>
+                <span class='indicator'></span>
+                <span class='status-text'>--</span>
+            </span>
         </div>
         <div class='status'>
             <span class='status-label'>Cool Down Active:</span>
-            <span class='status-value' id='cooldown'>--</span>
+            <span class='status-value indicator' id='cooldown'>
+                <span class='indicator'></span>
+                <span class='status-text'>--</span>
+            </span>
         </div>
         <div class='status'>
             <span class='status-label'>Maintenance Active:</span>
-            <span class='status-value' id='maintenance'>--</span>
+            <span class='status-value indicator' id='maintenance'>
+                <span class='indicator'></span>
+                <span class='status-text'>--</span>
+            </span>
         </div>
         <div class='status'>
             <span class='status-label'>Days Until Maintenance:</span>
@@ -78,8 +65,8 @@
         </div>
 
         <div style='margin-top: 20px; text-align: center;'>
-            <a href='/logpage' style='display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;'>View State Transition Log</a>
-            <a href='/config' style='display: inline-block; margin-left: 10px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;'>Configuration</a>
+            <a href='/logpage' class='button-primary'>View State Transition Log</a>
+            <a href='/config' class='button-primary'>Configuration</a>
         </div>
         <div style='margin-top: 10px; text-align: center; font-size: 12px; color: #666;'>
             Uptime: <span id='uptimeDisplay'>--</span>
@@ -88,16 +75,16 @@
         <div class='test-section'>
             <h3>Testing Controls</h3>
             <div class='test-buttons'>
-                <button class='test-button success' onclick='testConnection()'>Test Connection</button>
-                <button class='test-button warning' onclick='forceMaintenance()'>Force Maintenance (2s)</button>
+                <button class='button-primary' onclick='testConnection()'>Test Connection</button>
+                <button class='button-secondary' onclick='forceMaintenance()'>Force Maintenance (2s)</button>
             </div>
             <div class='test-buttons'>
-                <button class='test-button danger' onclick='overrideRunning(true)'>Override Running: YES</button>
-                <button class='test-button success' onclick='overrideRunning(false)'>Override Running: NO</button>
-                <button class='test-button success' onclick='overrideRunning(null)'>Clear Running Override</button>
-                <button class='test-button danger' onclick='overrideRequest(true)'>Override Request: YES</button>
-                <button class='test-button success' onclick='overrideRequest(false)'>Override Request: NO</button>
-                <button class='test-button success' onclick='overrideRequest(null)'>Clear Request Override</button>
+                <button class='button-tertiary' onclick='overrideRunning(true)'>Indicate Running</button>
+                <button class='button-tertiary' onclick='overrideRunning(false)'>Indicate NOT Running</button>
+                <button class='button-tertiary' onclick='overrideRunning(null)'>Use Run-Sense Input</button>
+                <button class='button-primary' onclick='overrideRequest(true)'>Force Run-Request</button>
+                <button class='button-primary' onclick='overrideRequest(false)'>Force NO Run-Request</button>
+                <button class='button-primary' onclick='overrideRequest(null)'>Use Inverter's Run-Request</button>
             </div>
         </div>
     </div>

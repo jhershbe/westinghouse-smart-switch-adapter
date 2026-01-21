@@ -33,29 +33,52 @@ function updateStatus() {
             // Try to parse as JSON
             var data = JSON.parse(text);
             console.log('Status data:', data);
-            document.getElementById('running').innerHTML = 
-                '<span class="indicator ' + (data.running ? 'on' : 'off') + '"></span>' + 
-                (data.running ? 'Yes' : 'No');
-            document.getElementById('request').innerHTML = 
-                '<span class="indicator ' + (data.run_request ? 'on' : 'off') + '"></span>' + 
-                (data.run_request ? 'Yes' : 'No');
+
+            const runningElement = document.getElementById('running');
+            if (runningElement) {
+                runningElement.className = 'status-value indicator ' + (data.running ? 'on' : 'off');
+            }
+
+            const requestElement = document.getElementById('request');
+            if (requestElement) {
+                requestElement.className = 'status-value indicator ' + (data.run_request ? 'on' : 'off');
+            }
+
+            const cooldownElement = document.getElementById('cooldown');
+            if (cooldownElement) {
+                cooldownElement.className = 'status-value indicator ' + (data.cool_down ? 'on' : 'off');
+            }
+
+            const maintenanceElement = document.getElementById('maintenance');
+            if (maintenanceElement) {
+                maintenanceElement.className = 'status-value indicator ' + (data.maintenance ? 'on' : 'off');
+            }
+
+            document.getElementById('running').querySelector('.status-text').textContent = data.running ? 'Yes' : 'No';
+            document.getElementById('request').querySelector('.status-text').textContent = data.run_request ? 'Yes' : 'No';
+
             if (data.cool_down) {
                 const remaining_ms = data.cool_down_remaining;
                 const minutes = Math.floor(remaining_ms / (60 * 1000));
                 const seconds = Math.floor((remaining_ms % (60 * 1000)) / 1000);
                 const timeStr = minutes + 'm ' + seconds + 's';
-                document.getElementById('cooldown').innerHTML = '<span class="indicator on"></span>Yes (' + timeStr + ' remaining)';
+                document.getElementById('cooldown').querySelector('.indicator').className = 'indicator on';
+                document.getElementById('cooldown').querySelector('.status-text').textContent = 'Yes (' + timeStr + ' remaining)';
             } else {
-                document.getElementById('cooldown').innerHTML = '<span class="indicator off"></span>No';
+                document.getElementById('cooldown').querySelector('.indicator').className = 'indicator off';
+                document.getElementById('cooldown').querySelector('.status-text').textContent = 'No';
             }
+
             if (data.maintenance) {
                 const remaining_ms = data.maintenance_remaining;
                 const minutes = Math.floor(remaining_ms / (60 * 1000));
                 const seconds = Math.floor((remaining_ms % (60 * 1000)) / 1000);
                 const timeStr = minutes + 'm ' + seconds + 's';
-                document.getElementById('maintenance').innerHTML = '<span class="indicator on"></span>Yes (' + timeStr + ' remaining)';
+                document.getElementById('maintenance').querySelector('.indicator').className = 'indicator on';
+                document.getElementById('maintenance').querySelector('.status-text').textContent = 'Yes (' + timeStr + ' remaining)';
             } else {
-                document.getElementById('maintenance').innerHTML = '<span class="indicator off"></span>No';
+                document.getElementById('maintenance').querySelector('.indicator').className = 'indicator off';
+                document.getElementById('maintenance').querySelector('.status-text').textContent = 'No';
             }
             var countdown = data.maintenance_countdown;
             document.getElementById('days').textContent =
