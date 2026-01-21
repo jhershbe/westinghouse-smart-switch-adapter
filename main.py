@@ -29,15 +29,6 @@ def save_config(config):
 
 config = load_config()
 
-# Use config values
-maintenance_interval_days = config["maintenance_interval_days"]
-maintenance_duration_minutes = config["maintenance_duration_minutes"]
-maintenance_duration = maintenance_duration_minutes * 60 * 1000
-cool_down_duration_minutes = config["cool_down_duration_minutes"]
-cool_down_duration = cool_down_duration_minutes * 60 * 1000
-maintenance_start_hour = config["maintenance_start_hour"]
-maintenance_start_minute = config["maintenance_start_minute"]
-
 # Fake RTC
 rtc_synced = True  # Always consider synced, starting from 0
 rtc_base_minutes = 0
@@ -88,36 +79,51 @@ class GeneratorState:
     STOPPING = "stopping"                   # Activating kill relay with delay
 
 class GeneratorController:
-    def __init__(self):
+    def __init__(self, sensor_manager, config):
         self.sensor_manager = sensor_manager
-        self.maintenance_interval_days = maintenance_interval_days
-        self.maintenance_duration_minutes = maintenance_duration_minutes
-        self.maintenance_duration = maintenance_duration
-        self.cool_down_duration_minutes = cool_down_duration_minutes
-        self.cool_down_duration = cool_down_duration
-        self.maintenance_start_hour = maintenance_start_hour
-        self.maintenance_start_minute = maintenance_start_minute
-        self.days_until_maintenance = days_until_maintenance
-        self.maintenance_check_time = maintenance_check_time
-        self.maintenance_end = maintenance_end
-        self.maintenance_active = maintenance_active
-        self.cool_down_end = cool_down_end
-        self.cool_down_active = cool_down_active
-        self.kill_gen = kill_gen
-        self.start_attempts = start_attempts
-        self.detected_runs = detected_runs
-        self.last_start_request = last_start_request
-        self.last_kill_action = last_kill_action
-        self.last_run_sense_start = last_run_sense_start
-        self.last_run_sense_end = last_run_sense_end
-        self.start_relay_end_time = start_relay_end_time
-        self.pulse_cooldown = pulse_cooldown
-        self.kill_relay_delay_active = kill_relay_delay_active
-        self.kill_relay_delay_timer = kill_relay_delay_timer
-        self.prev_state = prev_state
-        self.state_log = state_log
-        self.stopping_waiting_for_stop = True
-        self.stopping_stopped_time = None
+        self.maintenance_interval_days = config.get("maintenance_interval_days", 7)
+        self.maintenance_duration_minutes = config.get("maintenance_duration_minutes", 10)
+        self.maintenance_duration = self.maintenance_duration_minutes * 60 * 1000
+        self.cool_down_duration_minutes = config.get("cool_down_duration_minutes", 15)
+        self.cool_down_duration = self.cool_down_duration_minutes * 60 * 1000
+        self.maintenance_start_hour = config.get("maintenance_start_hour", 12)
+        self.maintenance_start_minute = config.get("maintenance_start_minute", 0)
+
+        # State variables
+        self.days_until_maintenance = self.maintenance_interval_days
+        self.maintenance_check_time = time.ticks_ms()
+        self.maintenance_end = 0
+        self.maintenance_active = False
+        self.cool_down_end = 0
+        self.cool_down_active = False
+        self.kill_gen = False
+
+        # Statistics and tracking
+        self.start_attempts = 0
+        self.detected_runs = 0
+        self.last_start_request = 0
+        self.last_kill_action = 0
+        self.last_run_sense_start = 0
+        self.last_run_sense_end = 0
+
+        # Timing and relays
+        self.start_relay_end_time = 0
+        self.pulse_cooldown = 0
+
+        self.state_log = []
+        self.max_log_entries = 50
+
+        self.prev_state = {
+            'running': False,
+            'run_request': False,
+            'cool_down': False,
+            'maintenance': False,
+            'days': self.maintenance_interval_days,
+            'kill_relay': False,
+            'start_relay': False,
+            'maintenance_reset': False
+        }
+
         self.current_state = None
         self.state_map = {
             GeneratorState.IDLE: IdleState(self),
@@ -129,23 +135,60 @@ class GeneratorController:
         }
         self.transition_to(GeneratorState.IDLE)
 
+    def log_state_change(self, event, details=''):
+        """Log a state transition with timestamp"""
+        entry = (time.ticks_ms(), event, details)
+        self.state_log.append(entry)
+        if len(self.state_log) > self.max_log_entries:
+            self.state_log.pop(0)
+        print(f"[{entry[0]}] {event}: {details}")
+
     def transition_to(self, state):
         if self.current_state:
             self.current_state.on_exit()
         self.current_state = self.state_map[state]
         self.current_state.on_enter()
 
+    def get_status_generator(self):
+        current_time = time.ticks_ms()
+        current_minutes = get_current_minutes()
+        configured_minutes = self.maintenance_start_hour * 60 + self.maintenance_start_minute
+        minutes_until_start = (configured_minutes - current_minutes + 1440) % 1440
+        total_minutes = self.days_until_maintenance * 1440 + minutes_until_start
+
+        yield '{'
+        yield '"running":' + ('true' if self.sensor_manager.is_running_debounced() else 'false')
+        yield ',"run_request":' + ('true' if self.sensor_manager.is_request_run() else 'false')
+        yield ',"cool_down":' + ('true' if self.cool_down_active else 'false')
+        yield ',"cool_down_remaining":' + str(max(0, self.cool_down_end - current_time))
+        yield ',"maintenance":' + ('true' if self.maintenance_active else 'false')
+        yield ',"maintenance_remaining":' + str(max(0, self.maintenance_end - current_time))
+        yield ',"maintenance_countdown":{"days":' + str(total_minutes // 1440)
+        yield ',"hours":' + str((total_minutes % 1440) // 60)
+        yield ',"minutes":' + str(total_minutes % 60)
+        yield ',"total_minutes":' + str(total_minutes) + '}'
+        yield ',"current_time_minutes":' + str(current_minutes)
+        yield ',"rtc_synced":true'
+        yield ',"start_attempts":' + str(self.start_attempts)
+        yield ',"detected_runs":' + str(self.detected_runs)
+        yield ',"last_start_request":' + str(self.last_start_request)
+        yield ',"last_kill_action":' + str(self.last_kill_action)
+        yield ',"last_run_sense_start":' + str(self.last_run_sense_start)
+        yield ',"last_run_sense_end":' + str(self.last_run_sense_end)
+        yield '}'
+
     def is_maintenance_starting(self):
-        return is_maintenance_starting()
+        if self.days_until_maintenance > 0:
+            return False
+        current_minutes = get_current_minutes()
+        configured_minutes = self.maintenance_start_hour * 60 + self.maintenance_start_minute
+        return current_minutes >= configured_minutes
 
     def update(self):
         # Update pulse cooldown
         if self.pulse_cooldown > 0:
             self.pulse_cooldown -= 1
         self.current_state.update()
-
-# Instantiate the controller
-controller = GeneratorController()
 
 class State:
     def __init__(self, controller):
@@ -167,7 +210,7 @@ class IdleState(State):
             self.controller.maintenance_end = time.ticks_add(time.ticks_ms(), self.controller.maintenance_duration)
             self.controller.days_until_maintenance = self.controller.maintenance_interval_days
             self.controller.maintenance_active = True
-            log_state_change('Maintenance', f'Started ({self.controller.maintenance_duration_minutes} min)')
+            self.controller.log_state_change('Maintenance', f'Started ({self.controller.maintenance_duration_minutes} min)')
             self.controller.transition_to(GeneratorState.STARTING)
         # Check for run request, only if cooldown expired
         elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0:
@@ -182,7 +225,7 @@ class StartingState(State):
         relay_start_gen.value(1)
         self.controller.start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
         self.controller.pulse_cooldown = 400  # 20 seconds
-        log_state_change('Start Relay', 'Activated (starting generator)')
+        self.controller.log_state_change('Start Relay', 'Activated (starting generator)')
         self.controller.prev_state['start_relay'] = True
 
     def update(self):
@@ -191,7 +234,7 @@ class StartingState(State):
         elif time.ticks_diff(self.controller.start_relay_end_time, time.ticks_ms()) <= 0:
             # Pulse complete, deactivate
             relay_start_gen.value(0)
-            log_state_change('Start Relay', 'Deactivated (pulse complete)')
+            self.controller.log_state_change('Start Relay', 'Deactivated (pulse complete)')
             self.controller.prev_state['start_relay'] = False
             # Now wait for the generator to start or cooldown to expire
             self.controller.confirm_started_start_time = time.ticks_ms()
@@ -217,40 +260,58 @@ class RunningState(State):
             self.controller.days_until_maintenance = self.controller.maintenance_interval_days
             self.controller.maintenance_check_time = time.ticks_ms()
             self.controller.prev_state['maintenance_reset'] = True
-            log_state_change('Maintenance Reset', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
+            self.controller.log_state_change('Maintenance Reset', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
 
     def update(self):
-        if not self.controller.sensor_manager.is_request_run():
-            self.controller.transition_to(GeneratorState.COOL_DOWN)
+        if self.controller.maintenance_active:
+            # End maintenance when time is up
+            if time.ticks_diff(self.controller.maintenance_end, time.ticks_ms()) <= 0:
+                self.controller.maintenance_active = False
+                self.controller.log_state_change('Maintenance', 'Finished')
+                self.controller.transition_to(GeneratorState.STOPPING)
+        else:
+            if not self.controller.sensor_manager.is_request_run():
+                self.controller.transition_to(GeneratorState.COOL_DOWN)
 
 class CoolDownState(State):
     def on_enter(self):
+        self.controller.cool_down_active = True
         self.controller.cool_down_end = time.ticks_add(time.ticks_ms(), self.controller.cool_down_duration)
-        log_state_change('Cool Down', f'Started ({self.controller.cool_down_duration_minutes} min)')
+        self.controller.log_state_change('Cool Down', f'Started ({self.controller.cool_down_duration_minutes} min)')
 
     def update(self):
         if time.ticks_diff(self.controller.cool_down_end, time.ticks_ms()) <= 0:
+            self.controller.cool_down_active = False
+            self.controller.days_until_maintenance = self.controller.maintenance_interval_days
+            self.controller.log_state_change('Cool Down', 'Finished')
             self.controller.transition_to(GeneratorState.STOPPING)
+
+    def on_exit(self):
+        # Reset maintenance at the end of cool-down
+        self.controller.days_until_maintenance = self.controller.maintenance_interval_days
+        self.controller.log_state_change('Maintenance', 'Reset after cool-down')
 
 class StoppingState(State):
     def on_enter(self):
         relay_kill_gen.value(1)
         self.controller.stopping_waiting_for_stop = True
-        self.controller.stopping_stopped_time = None
-        log_state_change('Kill Relay', 'Activated')
+        self.controller.kill_relay_delay_timer = None  # Renamed for clarity
+        self.controller.last_kill_action = time.ticks_ms()  # Update last_kill_action
+        self.controller.log_state_change('Kill Relay', 'Activated')
         self.controller.prev_state['kill_relay'] = True
 
     def update(self):
         if self.controller.stopping_waiting_for_stop:
             if not self.controller.sensor_manager.is_running_debounced():
                 # Generator has stopped, start 2s timer
-                self.controller.stopping_stopped_time = time.ticks_ms()
+                self.controller.kill_relay_delay_timer = time.ticks_ms()
                 self.controller.stopping_waiting_for_stop = False
         else:
             # Already stopped, count 2 seconds
-            if time.ticks_diff(time.ticks_ms(), self.controller.stopping_stopped_time) >= 2000:
+            if time.ticks_diff(time.ticks_ms(), self.controller.kill_relay_delay_timer) >= 2000:
                 relay_kill_gen.value(0)
-                log_state_change('Kill Relay', 'Deactivated (delay complete)')
+                self.controller.last_kill_action = time.ticks_ms()  # Update last_kill_action
+                self.controller.log_state_change('Kill Relay', 'Deactivated (delay complete)')
                 self.controller.prev_state['kill_relay'] = False
                 self.controller.transition_to(GeneratorState.IDLE)
 
@@ -264,6 +325,8 @@ class SensorManager:
         self.debounce_timer = 0
         self.debounced_running = False
         self.previous_debounced_running = False
+        self.became_running = False
+        self.stopped_running = False
 
     def set_override_running(self, override):
         self.test_override_running = override
@@ -283,108 +346,39 @@ class SensorManager:
 
     def update_debounce(self):
         sensor_running = self._is_running_raw()
-        if sensor_running:
-            if not self.debounced_running:
-                self.debounce_timer += 1
-                if self.debounce_timer >= 40:  # 2 seconds debounce
-                    self.debounced_running = True
-                    self.debounce_timer = 0
+        if sensor_running != self.debounced_running:
+            self.debounce_timer += 1
+            if self.debounce_timer >= 10:  # 2 seconds debounce (10 * 200ms)
+                self.debounced_running = sensor_running
+                self.debounce_timer = 0
         else:
-            self.debounced_running = False
             self.debounce_timer = 0
 
     def is_running_debounced(self):
         return self.debounced_running
 
-    def get_running_transition(self):
-        """Returns (became_running, stopped_running)"""
-        became_running = self.debounced_running and not self.previous_debounced_running
-        stopped_running = not self.debounced_running and self.previous_debounced_running
+    def update_transitions(self):
+        """Updates internal transition flags. Should be called once per loop."""
+        self.became_running = self.debounced_running and not self.previous_debounced_running
+        self.stopped_running = not self.debounced_running and self.previous_debounced_running
         self.previous_debounced_running = self.debounced_running
-        return became_running, stopped_running
 
 # Instantiate SensorManager
 sensor_manager = SensorManager(in_run_sense, in_run_request)
 
-cool_down_active = False
-cool_down_duration = 15 * 60 * 1000 # 15 minutes
-cool_down_end = 0
-
-ms_per_day = 24 * 60 * 60 * 1000  # one day in milliseconds
-maintenance_active = False
-days_until_maintenance = maintenance_interval_days
-maintenance_check_time = 0  # When we last checked for day rollover
-maintenance_end = 0
-
-kill_gen = False
-
-start_attempts = 0
-detected_runs = 0
-last_start_request = 0
-previous_running = False
-previous_request = False
-last_kill_action = 0
-last_run_sense_start = 0
-last_run_sense_end = 0
-start_relay_end_time = 0
-pulse_cooldown = 0
-kill_relay_delay_active = False
-kill_relay_delay_timer = 0
-
-# State transition logging
-state_log = []
-MAX_LOG_ENTRIES = 50
-
-# Track previous states for change detection
-prev_state = {
-    'running': False,
-    'run_request': False,
-    'cool_down': False,
-    'maintenance': False,
-    'days': maintenance_interval_days,
-    'kill_relay': False,
-    'start_relay': False,
-    'maintenance_reset': False  # Track if we've reset maintenance for current run
-}
-
-def log_state_change(event, details=''):
-    """Log a state transition with timestamp"""
-    global state_log
-    entry = {
-        'timestamp': time.ticks_ms(),
-        'event': event,
-        'details': details
-    }
-    state_log.append(entry)
-    # Keep only last MAX_LOG_ENTRIES
-    if len(state_log) > MAX_LOG_ENTRIES:
-        state_log.pop(0)
-    print(f"[{entry['timestamp']}] {event}: {details}")
-
-def is_cool_down_starting():
-    return sensor_manager.is_running_debounced() and (not sensor_manager.is_request_run()) and (not (cool_down_active or maintenance_active)) and (not kill_gen)
-
-def is_cool_down_finished():
-    return cool_down_active and time.ticks_diff(cool_down_end, time.ticks_ms()) < 0
-
-def is_maintenance_starting():
-    if days_until_maintenance > 0:
-        return False
-    current_minutes = get_current_minutes()
-    configured_minutes = maintenance_start_hour * 60 + maintenance_start_minute
-    return current_minutes >= configured_minutes
-
-def is_maintenance_finished():
-    return maintenance_active and time.ticks_diff(maintenance_end, time.ticks_ms()) < 0
+# Instantiate the controller
+controller = GeneratorController(sensor_manager, config)
 
 async def manage_start_stop():
     # Initialize maintenance check time
     controller.maintenance_check_time = time.ticks_ms()
+    ms_per_day = 24 * 60 * 60 * 1000  # one day in milliseconds
+    previous_request = False
 
     loop_count = 0
 
     # Log startup
-    log_state_change('System Start', 'Generator controller initialized')
+    controller.log_state_change('System Start', 'Generator controller initialized')
 
     while True:
         loop_count += 1
@@ -402,15 +396,15 @@ async def manage_start_stop():
         debounced_running = controller.sensor_manager.is_running_debounced()
 
         # Count runs based on debounced signal
-        became_running, stopped_running = controller.sensor_manager.get_running_transition()
-        if became_running:
+        controller.sensor_manager.update_transitions()
+        if controller.sensor_manager.became_running:
             controller.detected_runs += 1
             controller.last_run_sense_start = time.ticks_ms()
-        elif stopped_running:
+        elif controller.sensor_manager.stopped_running:
             controller.last_run_sense_end = time.ticks_ms()
 
-        if became_running:
-            controller.pulse_cooldown = 400  # 20 seconds cooldown after start
+        if controller.sensor_manager.became_running:
+            controller.pulse_cooldown = 100  # 20 seconds cooldown after start
 
         request = controller.sensor_manager.is_request_run()
         if request and not previous_request:
@@ -420,60 +414,23 @@ async def manage_start_stop():
         # Update controller (handles state machine)
         controller.update()
 
-        # Handle cooldown and maintenance (legacy logic, may be moved to states)
-        if is_cool_down_starting():
-            controller.cool_down_active = True
-            controller.cool_down_end = time.ticks_add(time.ticks_ms(), controller.cool_down_duration)
-            log_state_change('Cool Down', f'Started ({controller.cool_down_duration_minutes} min)')
-        if is_cool_down_finished():
-            controller.cool_down_active = False
-            controller.days_until_maintenance = controller.maintenance_interval_days
-            controller.kill_gen = True
-            log_state_change('Cool Down', 'Finished')
+        # Log state changes
+        current_running = debounced_running
+        current_request = controller.sensor_manager.is_request_run()
 
-        # Log cool down state changes
-        if controller.cool_down_active != controller.prev_state['cool_down']:
-            controller.prev_state['cool_down'] = controller.cool_down_active
+        if current_running != controller.prev_state['running']:
+            controller.log_state_change('Generator Running', 'Yes' if current_running else 'No')
+            controller.prev_state['running'] = current_running
 
-        if is_maintenance_starting():
-            controller.maintenance_active = True
-            controller.maintenance_end = time.ticks_add(time.ticks_ms(), controller.maintenance_duration)
-            controller.days_until_maintenance = controller.maintenance_interval_days
-            log_state_change('Maintenance', f'Started ({controller.maintenance_duration_minutes} min)')
-
-        if is_maintenance_finished():
-            controller.maintenance_active = False
-            controller.kill_gen = True
-            log_state_change('Maintenance', 'Finished')
-
-        # Log maintenance state changes
-        if controller.maintenance_active != controller.prev_state['maintenance']:
-            controller.prev_state['maintenance'] = controller.maintenance_active
+        if current_request != controller.prev_state['run_request']:
+            controller.log_state_change('Run Request', 'Active' if current_request else 'Inactive')
+            controller.prev_state['run_request'] = current_request
 
         # Log days until maintenance changes
         if controller.days_until_maintenance != controller.prev_state['days']:
-            log_state_change('Maintenance Countdown', f'{controller.days_until_maintenance} days remaining')
+            controller.log_state_change('Maintenance Countdown', f'{controller.days_until_maintenance} days remaining')
             controller.prev_state['days'] = controller.days_until_maintenance
 
-        # Handle kill relay (legacy, may be moved to states)
-        if controller.kill_gen and debounced_running:
-            controller.last_kill_action = time.ticks_ms()
-            relay_kill_gen.value(1)
-            if not controller.prev_state['kill_relay']:
-                log_state_change('Kill Relay', 'Activated')
-                controller.prev_state['kill_relay'] = True
-        elif controller.kill_gen:
-            if not controller.kill_relay_delay_active:
-                controller.kill_relay_delay_active = True
-                controller.kill_relay_delay_timer = 0
-            controller.kill_relay_delay_timer += 1
-            if controller.kill_relay_delay_timer >= 40:  # 2 seconds delay
-                controller.kill_gen = False
-                relay_kill_gen.value(0)
-                controller.kill_relay_delay_active = False
-                if controller.prev_state['kill_relay']:
-                    log_state_change('Kill Relay', 'Deactivated (delay complete)')
-                    controller.prev_state['kill_relay'] = False
         # Profiling
         if loop_count % 100 == 0:
             gc.collect()
@@ -482,10 +439,10 @@ async def manage_start_stop():
 
 async def update_leds():
     while True:
-        led_running.value(sensor_manager.is_running_debounced())
-        led_run_request.value(sensor_manager.is_request_run())
-        led_cool_down.value(cool_down_active)
-        led_maintenance.value(maintenance_active)
+        led_running.value(controller.sensor_manager.is_running_debounced())
+        led_run_request.value(controller.sensor_manager.is_request_run())
+        led_cool_down.value(controller.cool_down_active)
+        led_maintenance.value(controller.maintenance_active)
         await asyncio.sleep_ms(500)
 
 # Web server routes
@@ -507,44 +464,35 @@ def script_js(request):
 
 @app.route('/status')
 def get_status(request):
-    current_minutes = get_current_minutes()
-    configured_minutes = maintenance_start_hour * 60 + maintenance_start_minute
-    minutes_until_start = (configured_minutes - current_minutes + 1440) % 1440
-    total_minutes = days_until_maintenance * 1440 + minutes_until_start
-    days = total_minutes // 1440
-    hours = (total_minutes % 1440) // 60
-    minutes = total_minutes % 60
-
-    return {
-        'running': sensor_manager.is_running_debounced(),
-        'run_request': sensor_manager.is_request_run(),
-        'cool_down': cool_down_active,
-        'cool_down_remaining': max(0, cool_down_end - time.ticks_ms()) if cool_down_active else 0,
-        'maintenance': maintenance_active,
-        'maintenance_remaining': max(0, maintenance_end - time.ticks_ms()) if maintenance_active else 0,
-        'maintenance_countdown': {
-            'days': days,
-            'hours': hours,
-            'minutes': minutes,
-            'total_minutes': total_minutes
-        },
-        'current_time_minutes': current_minutes,
-        'rtc_synced': True,  # Always considered synced
-        'start_attempts': start_attempts,
-        'detected_runs': detected_runs,
-        'last_start_request': last_start_request,
-        'last_kill_action': last_kill_action,
-        'last_run_sense_start': last_run_sense_start,
-        'last_run_sense_end': last_run_sense_end
-    }
+    try:
+        return controller.get_status_generator(), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        print('[ERROR] /status route:', e)
+        return {'error': str(e)}
 
 @app.route('/uptime')
 def get_uptime(request):
-    return {'uptime_ms': time.ticks_ms()}
+    try:
+        return {'uptime_ms': time.ticks_ms()}
+    except Exception as e:
+        print('[ERROR] /uptime route:', e)
+        return {'error': str(e)}
+
 
 @app.route('/log')
 def get_log(request):
-    return {'log': state_log, 'uptime_ms': time.ticks_ms()}
+    try:
+        def generate_log():
+            yield '{"log":['
+            for i, (ts, ev, det) in enumerate(controller.state_log):
+                if i > 0:
+                    yield ','
+                yield ujson.dumps({'timestamp': ts, 'event': ev, 'details': det})
+            yield '],"uptime_ms":' + str(time.ticks_ms()) + '}'
+        return generate_log(), 200, {'Content-Type': 'application/json'}
+    except Exception as e:
+        print('[ERROR] /log route:', e)
+        return {'error': str(e)}
 
 @app.route('/logpage')
 def log_page(request):
@@ -564,7 +512,11 @@ def config_page(request):
 
 @app.route('/config/data')
 def get_config(request):
-    return config
+    try:
+        return config
+    except Exception as e:
+        print('[ERROR] /config/data route:', e)
+        return {'error': str(e)}
 
 def parse_form_data(body):
     data = {}
@@ -583,62 +535,84 @@ def update_config_route(request):
         old_start_minute = config.get("maintenance_start_minute", 0)
         config.update(data)
         save_config(config)
-        global maintenance_interval_days, maintenance_duration, cool_down_duration, maintenance_start_hour, maintenance_start_minute, rtc_synced, rtc_base_minutes, rtc_base_ticks, days_until_maintenance, maintenance_check_time
-        maintenance_interval_days = config["maintenance_interval_days"]
-        maintenance_duration = config["maintenance_duration_minutes"] * 60 * 1000
-        cool_down_duration = config["cool_down_duration_minutes"] * 60 * 1000
-        maintenance_start_hour = config["maintenance_start_hour"]
-        maintenance_start_minute = config["maintenance_start_minute"]
+
+        # Update controller from new config
+        controller.maintenance_interval_days = config["maintenance_interval_days"]
+        controller.maintenance_duration_minutes = config["maintenance_duration_minutes"]
+        controller.maintenance_duration = controller.maintenance_duration_minutes * 60 * 1000
+        controller.cool_down_duration_minutes = config["cool_down_duration_minutes"]
+        controller.cool_down_duration = controller.cool_down_duration_minutes * 60 * 1000
+        controller.maintenance_start_hour = config["maintenance_start_hour"]
+        controller.maintenance_start_minute = config["maintenance_start_minute"]
+
         if 'current_minutes' in data:
+            global rtc_base_minutes, rtc_base_ticks, rtc_synced
             host_minutes = data['current_minutes']
             current_minutes = get_current_minutes()
             if abs(current_minutes - host_minutes) > 1:
                 rtc_base_minutes = host_minutes
                 rtc_base_ticks = time.ticks_ms()
                 rtc_synced = True
+
         # Reset countdown if start time changed
-        if maintenance_start_hour != old_start_hour or maintenance_start_minute != old_start_minute:
-            days_until_maintenance = maintenance_interval_days
-            maintenance_check_time = time.ticks_ms()
+        if controller.maintenance_start_hour != old_start_hour or controller.maintenance_start_minute != old_start_minute:
+            controller.days_until_maintenance = controller.maintenance_interval_days
+            controller.maintenance_check_time = time.ticks_ms()
         return {'status': 'ok'}
     except Exception as e:
+        print('[ERROR] /config/update route:', e)
         return {'error': str(e)}
 
 @app.route('/ping')
 def ping(request):
-    return {'status': 'ok', 'message': 'Server is running'}
+    try:
+        return {'status': 'ok', 'message': 'Server is running'}
+    except Exception as e:
+        print('[ERROR] /ping route:', e)
+        return {'error': str(e)}
 
 # Testing endpoints
 @app.route('/test/force_maintenance', methods=['POST'])
 def test_force_maintenance(request):
-    global days_until_maintenance
-    days_until_maintenance = 0
-    log_state_change('TEST', 'Forced maintenance countdown to 0')
-    return {'status': 'ok', 'message': 'Maintenance will start in next cycle'}
+    try:
+        controller.days_until_maintenance = 0
+        controller.log_state_change('TEST', 'Forced maintenance countdown to 0')
+        return {'status': 'ok', 'message': 'Maintenance will start in next cycle'}
+    except Exception as e:
+        print('[ERROR] /test/force_maintenance route:', e)
+        return {'error': str(e)}
 
 @app.route('/test/override_running', methods=['POST'])
 def test_override_running_endpoint(request):
-    data = request.json
-    override = data.get('override')  # True, False, or None
-    if override == 'none' or override is None:
-        sensor_manager.set_override_running(None)
-        log_state_change('TEST', 'Cleared running override (using sensor)')
-    else:
-        sensor_manager.set_override_running(bool(override))
-        log_state_change('TEST', f'Override running = {bool(override)}')
-    return {'status': 'ok', 'override': sensor_manager.test_override_running}
+    try:
+        data = request.json
+        override = data.get('override')  # True, False, or None
+        if override == 'none' or override is None:
+            sensor_manager.set_override_running(None)
+            controller.log_state_change('TEST', 'Cleared running override (using sensor)')
+        else:
+            sensor_manager.set_override_running(bool(override))
+            controller.log_state_change('TEST', f'Override running = {bool(override)}')
+        return {'status': 'ok', 'override': sensor_manager.test_override_running}
+    except Exception as e:
+        print('[ERROR] /test/override_running route:', e)
+        return {'error': str(e)}
 
 @app.route('/test/override_request', methods=['POST'])
 def test_override_request_endpoint(request):
-    data = request.json
-    override = data.get('override')  # True, False, or None
-    if override == 'none' or override is None:
-        sensor_manager.set_override_request(None)
-        log_state_change('TEST', 'Cleared request override (using sensor)')
-    else:
-        sensor_manager.set_override_request(bool(override))
-        log_state_change('TEST', f'Override request = {bool(override)}')
-    return {'status': 'ok', 'override': sensor_manager.test_override_request}
+    try:
+        data = request.json
+        override = data.get('override')  # True, False, or None
+        if override == 'none' or override is None:
+            sensor_manager.set_override_request(None)
+            controller.log_state_change('TEST', 'Cleared request override (using sensor)')
+        else:
+            sensor_manager.set_override_request(bool(override))
+            controller.log_state_change('TEST', f'Override request = {bool(override)}')
+        return {'status': 'ok', 'override': sensor_manager.test_override_request}
+    except Exception as e:
+        print('[ERROR] /test/override_request route:', e)
+        return {'error': str(e)}
 
 async def main():
     print('Starting Generator Controller...')
