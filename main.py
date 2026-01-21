@@ -72,7 +72,7 @@ print('AP active, IP:', ap.ifconfig()[0])
 print('Connect to: http://gencontroller.local')
 
 # Import Microdot after WiFi is initialized
-from microdot import Microdot, Response
+from microdot import Microdot, Response, send_file
 
 # Set up Microdot
 app = Microdot()
@@ -483,15 +483,19 @@ async def update_leds():
 # Web server routes
 @app.route('/')
 def index(request):
-    with open('index.html') as f:
-        html = f.read()
-    return Response(body=html, headers={'Content-Type': 'text/html'})
+    try:
+        return send_file('index.html')
+    except Exception as e:
+        print('[ERROR] / route:', e)
+        return Response(body='Error', status_code=500)
 
 @app.route('/script.js')
 def script_js(request):
-    with open('script.js') as f:
-        js = f.read()
-    return Response(body=js, headers={'Content-Type': 'application/javascript'})
+    try:
+        return send_file('script.js')
+    except Exception as e:
+        print('[ERROR] /script.js route:', e)
+        return Response(body='Error', status_code=500)
 
 @app.route('/status')
 def get_status(request):
@@ -536,15 +540,19 @@ def get_log(request):
 
 @app.route('/logpage')
 def log_page(request):
-    with open('log.html') as f:
-        html = f.read()
-    return Response(body=html, headers={'Content-Type': 'text/html'})
+    try:
+        return send_file('log.html')
+    except Exception as e:
+        print('[ERROR] /logpage route:', e)
+        return Response(body='Error', status_code=500)
 
 @app.route('/config')
 def config_page(request):
-    with open('config.html') as f:
-        html = f.read()
-    return Response(body=html, headers={'Content-Type': 'text/html'})
+    try:
+        return send_file('config.html')
+    except Exception as e:
+        print('[ERROR] /config route:', e)
+        return Response(body='Error', status_code=500)
 
 @app.route('/config/data')
 def get_config(request):
