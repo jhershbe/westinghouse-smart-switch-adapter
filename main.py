@@ -73,7 +73,6 @@ print('Connect to: http://gencontroller.local')
 
 # Import Microdot after WiFi is initialized
 from microdot import Microdot, Response
-from enum import Enum
 
 # Set up Microdot
 app = Microdot()
@@ -139,7 +138,7 @@ class GeneratorController:
 # Instantiate the controller
 controller = GeneratorController()
 
-class GeneratorState(Enum):
+class GeneratorState:
     IDLE = "idle"                          # Not running, monitoring for requests/maintenance
     STARTING = "starting"                   # Activating start relay (pulse)
     CONFIRM_STARTED = "confirm_started"     # Waiting to see if generator started after pulse
