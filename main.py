@@ -478,7 +478,7 @@ async def manage_start_stop():
         if loop_count % 100 == 0:
             gc.collect()
 
-        await asyncio.sleep_ms(50)
+        await asyncio.sleep_ms(200)
 
 async def update_leds():
     while True:
@@ -486,7 +486,7 @@ async def update_leds():
         led_run_request.value(sensor_manager.is_request_run())
         led_cool_down.value(cool_down_active)
         led_maintenance.value(maintenance_active)
-        await asyncio.sleep_ms(100)
+        await asyncio.sleep_ms(500)
 
 # Web server routes
 @app.route('/')
