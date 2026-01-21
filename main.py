@@ -3,6 +3,7 @@ import time
 import asyncio
 import network
 import ujson
+import gc
 
 CONFIG_FILE = 'config.json'
 
@@ -380,10 +381,14 @@ async def manage_start_stop():
     # Initialize maintenance check time
     controller.maintenance_check_time = time.ticks_ms()
 
+    loop_count = 0
+
     # Log startup
     log_state_change('System Start', 'Generator controller initialized')
 
     while True:
+        loop_count += 1
+
         # Check if a day has passed for maintenance countdown
         current_time = time.ticks_ms()
         time_since_check = time.ticks_diff(current_time, controller.maintenance_check_time)
@@ -469,6 +474,9 @@ async def manage_start_stop():
                 if controller.prev_state['kill_relay']:
                     log_state_change('Kill Relay', 'Deactivated (delay complete)')
                     controller.prev_state['kill_relay'] = False
+        # Profiling
+        if loop_count % 100 == 0:
+            gc.collect()
 
         await asyncio.sleep_ms(50)
 
