@@ -53,9 +53,9 @@ relay_kill_gen.value(0)
 
 # WiFi Access Point Setup
 ap = network.WLAN(network.AP_IF)
-ap.active(True)
-ap.config(essid='GenController', password='westinghouse', authmode=network.AUTH_WPA_WPA2_PSK)
 ap.config(hostname='gencontroller')
+ap.config(essid='GenController', password='westinghouse', authmode=network.AUTH_WPA_WPA2_PSK)
+ap.active(True)
 
 # Wait for AP to be active
 while not ap.active():
