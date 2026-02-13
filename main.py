@@ -280,7 +280,7 @@ class RunningState(State):
             self.controller.days_until_maintenance = self.controller.maintenance_interval_days
             self.controller.maintenance_check_time = time.ticks_ms()
             self.controller.prev_state['maintenance_reset'] = True
-            self.controller.log_state_change('Maintenance Reset', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
+            self.controller.log_state_change('Maintenance', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
             # Reset maintenance start time to config in case it was modified (e.g., by force)
             self.controller.maintenance_start_hour = config["maintenance_start_hour"]
             self.controller.maintenance_start_minute = config["maintenance_start_minute"]
@@ -330,6 +330,7 @@ class CoolDownState(State):
         # Reset maintenance at the end of cool-down
         self.controller.days_until_maintenance = self.controller.maintenance_interval_days
         self.controller.log_state_change('Maintenance', 'Reset after cool-down')
+        self.controller.prev_state['maintenance_reset'] = False
 
 class StoppingState(State):
     def on_enter(self):
@@ -360,6 +361,9 @@ class StoppingState(State):
                 self.controller.log_state_change('Kill Relay', 'Deactivated (delay complete)')
                 self.controller.prev_state['kill_relay'] = False
                 self.controller.transition_to(GeneratorState.IDLE)
+
+    def on_exit(self):
+        self.controller.prev_state['maintenance_reset'] = False
 
 
 class SensorManager:
