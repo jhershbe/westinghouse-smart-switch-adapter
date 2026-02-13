@@ -293,6 +293,16 @@ class RunningState(State):
             self.controller.log_state_change('Maintenance', f'Running ({self.controller.maintenance_duration_minutes} min)')
 
     def update(self):
+        # Check if generator unexpectedly stopped
+        if not self.controller.sensor_manager.is_running_debounced():
+            if self.controller.maintenance_active:
+                self.controller.maintenance_active = False
+                self.controller.log_state_change('Maintenance', 'Interrupted due to unexpected generator stop')
+            else:
+                self.controller.log_state_change('Error', 'Generator stopped unexpectedly while in RUNNING state')
+            self.controller.transition_to(GeneratorState.IDLE)
+            return
+
         if self.controller.maintenance_active:
             # End maintenance when time is up
             if time.ticks_diff(self.controller.maintenance_end, time.ticks_ms()) <= 0:
@@ -614,6 +624,8 @@ def ping(request):
 @app.route('/test/force_maintenance', methods=['POST'])
 def test_force_maintenance(request):
     try:
+        if controller.maintenance_pending or controller.maintenance_active or controller.current_state_name in ['starting', 'confirm_started']:
+            return {'status': 'error', 'message': 'Maintenance already in progress or starting'}
         current_minutes = get_current_minutes()
         controller.maintenance_start_hour = current_minutes // 60
         controller.maintenance_start_minute = current_minutes % 60
