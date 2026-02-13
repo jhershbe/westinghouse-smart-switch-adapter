@@ -8,21 +8,26 @@ import gc
 CONFIG_FILE = 'config.json'
 
 def load_config():
+    defaults = {
+        "maintenance_interval_days": 7,
+        "maintenance_duration_minutes": 10,
+        "cool_down_duration_minutes": 15,
+        "maintenance_start_hour": 12,
+        "maintenance_start_minute": 0,
+        "max_start_attempts": 3
+    }
     try:
         with open(CONFIG_FILE) as f:
             config = ujson.load(f)
         # Ensure values are ints
         config = {k: int(v) for k, v in config.items()}
+        # Merge with defaults for missing keys
+        for k, v in defaults.items():
+            if k not in config:
+                config[k] = v
         return config
     except:
-        return {
-            "maintenance_interval_days": 7,
-            "maintenance_duration_minutes": 10,
-            "cool_down_duration_minutes": 15,
-            "maintenance_start_hour": 12,
-            "maintenance_start_minute": 0,
-            "max_start_attempts": 3
-        }
+        return defaults
 
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
