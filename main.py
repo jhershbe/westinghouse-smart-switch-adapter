@@ -133,6 +133,7 @@ class GeneratorController:
         }
 
         self.current_state = None
+        self.current_state_name = None
         self.state_map = {
             GeneratorState.IDLE: IdleState(self),
             GeneratorState.STARTING: StartingState(self),
@@ -155,6 +156,7 @@ class GeneratorController:
         if self.current_state:
             self.current_state.on_exit()
         self.current_state = self.state_map[state]
+        self.current_state_name = state
         self.current_state.on_enter()
 
     def get_status_generator(self):
@@ -518,7 +520,8 @@ def get_log(request):
                 if i > 0:
                     yield ','
                 yield ujson.dumps({'timestamp': ts, 'event': ev, 'details': det})
-            yield '],"uptime_ms":' + str(time.ticks_ms()) + '}'
+            yield '],"current_state":' + ujson.dumps(controller.current_state_name)
+            yield ',"uptime_ms":' + str(time.ticks_ms()) + '}'
         return generate_log(), 200, {'Content-Type': 'application/json'}
     except Exception as e:
         print('[ERROR] /log route:', e)

@@ -179,6 +179,14 @@ function updateLog() {
                     '<span class="log-details">' + entry.details + '</span>' +
                     '</div>';
             }).join('');
+            // Update current state if on log page
+            if (document.getElementById('currentState')) {
+                document.getElementById('currentState').textContent = data.current_state;
+            }
+            // Update uptime display
+            if (document.getElementById('uptimeDisplay')) {
+                document.getElementById('uptimeDisplay').textContent = formatUptime(currentUptime);
+            }
         })
         .catch(e => {
             console.error('Error updating log:', e);
@@ -189,9 +197,7 @@ function updateLog() {
 // Page-specific initialization
 if (window.location.pathname === '/logpage') {
     // Log page
-    updateUptime();
     updateLog();
-    setInterval(updateUptime, 5000);
     setInterval(updateLog, 2000);
 } else {
     // Main page
@@ -221,7 +227,6 @@ function forceMaintenance() {
     .then(r => r.json())
     .then(data => {
         updateStatus();
-        updateLog();
     })
     .catch(e => alert('Error: ' + e));
 }
@@ -236,7 +241,6 @@ function overrideRunning(value) {
     .then(data => {
         const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
         updateStatus();
-        updateLog();
     })
     .catch(e => alert('Error: ' + e));
 }
@@ -251,7 +255,6 @@ function overrideRequest(value) {
     .then(data => {
         const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
         updateStatus();
-        updateLog();
     })
     .catch(e => alert('Error: ' + e));
 }
