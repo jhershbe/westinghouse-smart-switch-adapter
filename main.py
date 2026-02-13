@@ -144,6 +144,40 @@ class GeneratorController:
         }
         self.transition_to(GeneratorState.IDLE)
 
+    def start_maintenance(self):
+        """Initiate a maintenance run"""
+        self.maintenance_pending = True
+        self.log_state_change('Maintenance', 'Starting Generator')
+
+    def activate_maintenance(self):
+        """Mark maintenance as actively running"""
+        self.maintenance_active = True
+        self.maintenance_pending = False
+        self.maintenance_end = time.ticks_add(time.ticks_ms(), self.maintenance_duration)
+        self.log_state_change('Maintenance', f'Running ({self.maintenance_duration_minutes} min)')
+
+    def abort_maintenance(self):
+        """Abort maintenance and reset scheduling"""
+        self.maintenance_active = False
+        self.maintenance_pending = False
+        self.days_until_maintenance = self.maintenance_interval_days
+        self.maintenance_start_hour = config["maintenance_start_hour"]
+        self.maintenance_start_minute = config["maintenance_start_minute"]
+        self.log_state_change('Maintenance', 'Aborted')
+
+    def complete_maintenance(self):
+        """Complete maintenance successfully"""
+        self.maintenance_active = False
+        self.log_state_change('Maintenance', 'Finished')
+
+    def reset_maintenance_schedule(self):
+        """Reset maintenance countdown after generator run"""
+        self.days_until_maintenance = self.maintenance_interval_days
+        self.maintenance_check_time = time.ticks_ms()
+        self.maintenance_start_hour = config["maintenance_start_hour"]
+        self.maintenance_start_minute = config["maintenance_start_minute"]
+        self.log_state_change('Maintenance Reset', f'Countdown reset to {self.days_until_maintenance} days')
+
     def log_state_change(self, event, details=''):
         """Log a state transition with timestamp"""
         entry = (time.ticks_ms(), event, details)
@@ -216,8 +250,7 @@ class IdleState(State):
     def update(self):
         # Check for maintenance start
         if self.controller.is_maintenance_starting():
-            self.controller.maintenance_pending = True
-            self.controller.log_state_change('Maintenance', f'Starting Generator')
+            self.controller.start_maintenance()
             self.controller.transition_to(GeneratorState.STARTING)
         # Check for run request, only if cooldown expired and not failed
         elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0 and not self.controller.start_failed:
@@ -264,10 +297,7 @@ class ConfirmStartedState(State):
             if self.controller.start_attempts >= self.controller.max_start_attempts:
                 self.controller.log_state_change('Start Failure', f'Failed to start after {self.controller.max_start_attempts} attempts')
                 if self.controller.maintenance_pending:
-                    self.controller.maintenance_pending = False  # Cancel failed maintenance
-                    self.controller.days_until_maintenance = self.controller.maintenance_interval_days  # Reset countdown
-                    self.controller.maintenance_start_hour = config["maintenance_start_hour"]  # Reset to config
-                    self.controller.maintenance_start_minute = config["maintenance_start_minute"]
+                    self.controller.abort_maintenance()
                 else:
                     self.controller.start_failed = True  # Ignore run requests until cleared
                 self.controller.start_attempts = 0
@@ -277,31 +307,17 @@ class RunningState(State):
     def on_enter(self):
         # Reset maintenance if from request
         if not self.controller.prev_state['maintenance_reset']:
-            self.controller.days_until_maintenance = self.controller.maintenance_interval_days
-            self.controller.maintenance_check_time = time.ticks_ms()
-            self.controller.prev_state['maintenance_reset'] = True
-            self.controller.log_state_change('Maintenance', f'Countdown reset to {self.controller.days_until_maintenance} days (generator running from request)')
-            # Reset maintenance start time to config in case it was modified (e.g., by force)
-            self.controller.maintenance_start_hour = config["maintenance_start_hour"]
-            self.controller.maintenance_start_minute = config["maintenance_start_minute"]
+            self.controller.reset_maintenance_schedule()
 
         # If maintenance was pending, activate it now that generator is running
         if self.controller.maintenance_pending:
-            self.controller.maintenance_active = True
-            self.controller.maintenance_pending = False
-            self.controller.maintenance_end = time.ticks_add(time.ticks_ms(), self.controller.maintenance_duration)
-            self.controller.log_state_change('Maintenance', f'Running ({self.controller.maintenance_duration_minutes} min)')
+            self.controller.activate_maintenance()
 
     def update(self):
         # Check if generator unexpectedly stopped
         if not self.controller.sensor_manager.is_running_debounced():
             if self.controller.maintenance_active:
-                self.controller.maintenance_active = False
-                self.controller.log_state_change('Maintenance', 'Interrupted due to unexpected generator stop')
-                # Reset maintenance scheduling
-                self.controller.days_until_maintenance = self.controller.maintenance_interval_days
-                self.controller.maintenance_start_hour = config["maintenance_start_hour"]
-                self.controller.maintenance_start_minute = config["maintenance_start_minute"]
+                self.controller.abort_maintenance()
             else:
                 self.controller.log_state_change('Error', 'Generator stopped unexpectedly while in RUNNING state')
             self.controller.transition_to(GeneratorState.IDLE)
@@ -310,8 +326,7 @@ class RunningState(State):
         if self.controller.maintenance_active:
             # End maintenance when time is up
             if time.ticks_diff(self.controller.maintenance_end, time.ticks_ms()) <= 0:
-                self.controller.maintenance_active = False
-                self.controller.log_state_change('Maintenance', 'Finished')
+                self.controller.complete_maintenance()
                 self.controller.transition_to(GeneratorState.STOPPING)
         else:
             if not self.controller.sensor_manager.is_request_run():
