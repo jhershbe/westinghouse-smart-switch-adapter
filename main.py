@@ -608,9 +608,12 @@ def ping(request):
 @app.route('/test/force_maintenance', methods=['POST'])
 def test_force_maintenance(request):
     try:
+        current_minutes = get_current_minutes()
+        controller.maintenance_start_hour = current_minutes // 60
+        controller.maintenance_start_minute = current_minutes % 60
         controller.days_until_maintenance = 0
-        controller.log_state_change('TEST', 'Forced maintenance countdown to 0')
-        return {'status': 'ok', 'message': 'Maintenance will start in next cycle'}
+        controller.log_state_change('TEST', 'Forced maintenance to start immediately')
+        return {'status': 'ok', 'message': 'Maintenance starting immediately'}
     except Exception as e:
         print('[ERROR] /test/force_maintenance route:', e)
         return {'error': str(e)}
