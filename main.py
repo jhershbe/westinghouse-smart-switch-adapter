@@ -298,6 +298,10 @@ class RunningState(State):
             if self.controller.maintenance_active:
                 self.controller.maintenance_active = False
                 self.controller.log_state_change('Maintenance', 'Interrupted due to unexpected generator stop')
+                # Reset maintenance scheduling
+                self.controller.days_until_maintenance = self.controller.maintenance_interval_days
+                self.controller.maintenance_start_hour = config["maintenance_start_hour"]
+                self.controller.maintenance_start_minute = config["maintenance_start_minute"]
             else:
                 self.controller.log_state_change('Error', 'Generator stopped unexpectedly while in RUNNING state')
             self.controller.transition_to(GeneratorState.IDLE)
