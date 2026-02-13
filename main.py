@@ -20,7 +20,8 @@ def load_config():
             "maintenance_duration_minutes": 10,
             "cool_down_duration_minutes": 15,
             "maintenance_start_hour": 12,
-            "maintenance_start_minute": 0
+            "maintenance_start_minute": 0,
+            "max_start_attempts": 3
         }
 
 def save_config(config):
@@ -87,6 +88,7 @@ class GeneratorController:
         self.cool_down_duration = self.cool_down_duration_minutes * 60 * 1000
         self.maintenance_start_hour = config.get("maintenance_start_hour", 12)
         self.maintenance_start_minute = config.get("maintenance_start_minute", 0)
+        self.max_start_attempts = config.get("max_start_attempts", 3)
 
         # State variables
         self.days_until_maintenance = self.maintenance_interval_days
@@ -104,6 +106,7 @@ class GeneratorController:
         self.last_kill_action = 0
         self.last_run_sense_start = 0
         self.last_run_sense_end = 0
+        self.start_failed = False  # Flag to ignore run requests after max attempts until request clears
 
         # Timing and relays
         self.start_relay_end_time = 0
@@ -210,8 +213,8 @@ class IdleState(State):
             self.controller.maintenance_active = True
             self.controller.log_state_change('Maintenance', f'Started ({self.controller.maintenance_duration_minutes} min)')
             self.controller.transition_to(GeneratorState.STARTING)
-        # Check for run request, only if cooldown expired
-        elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0:
+        # Check for run request, only if cooldown expired and not failed
+        elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0 and not self.controller.start_failed:
             self.controller.transition_to(GeneratorState.STARTING)
         # If already running (e.g., startup), go to running
         elif self.controller.sensor_manager.is_running_debounced():
@@ -222,7 +225,7 @@ class StartingState(State):
         self.controller.start_attempts += 1
         relay_start_gen.value(1)
         self.controller.start_relay_end_time = time.ticks_add(time.ticks_ms(), 1000)
-        self.controller.pulse_cooldown = 400  # 20 seconds
+        self.controller.pulse_cooldown = 100  # 20 seconds
         self.controller.log_state_change('Start Relay', 'Activated (starting generator)')
         self.controller.prev_state['start_relay'] = True
 
@@ -246,9 +249,19 @@ class ConfirmStartedState(State):
     def update(self):
         # If generator started, go to running
         if self.controller.sensor_manager.is_running_debounced():
+            self.controller.start_attempts = 0  # Reset on success
+            self.controller.start_failed = False  # Clear failure flag
             self.controller.transition_to(GeneratorState.RUNNING)
         # Wait for cooldown to expire before allowing another attempt
         elif self.controller.pulse_cooldown == 0:
+            self.controller.log_state_change('Start Attempt Failed', f'Attempt {self.controller.start_attempts} failed')
+            if self.controller.start_attempts >= self.controller.max_start_attempts:
+                self.controller.log_state_change('Start Failure', f'Failed to start after {self.controller.max_start_attempts} attempts')
+                if self.controller.maintenance_active:
+                    self.controller.maintenance_active = False  # Cancel failed maintenance
+                else:
+                    self.controller.start_failed = True  # Ignore run requests until cleared
+                self.controller.start_attempts = 0
             self.controller.transition_to(GeneratorState.IDLE)
 
 class RunningState(State):
@@ -295,6 +308,7 @@ class StoppingState(State):
         self.controller.stopping_waiting_for_stop = True
         self.controller.kill_relay_delay_timer = None  # Renamed for clarity
         self.controller.last_kill_action = time.ticks_ms()  # Update last_kill_action
+        self.controller.stopping_start_time = time.ticks_ms()  # For timeout
         self.controller.log_state_change('Kill Relay', 'Activated')
         self.controller.prev_state['kill_relay'] = True
 
@@ -304,6 +318,11 @@ class StoppingState(State):
                 # Generator has stopped, start 2s timer
                 self.controller.kill_relay_delay_timer = time.ticks_ms()
                 self.controller.stopping_waiting_for_stop = False
+            elif time.ticks_diff(time.ticks_ms(), self.controller.stopping_start_time) > 30000:  # 30s timeout
+                # Timeout, log error and force to IDLE
+                relay_kill_gen.value(0)
+                self.controller.log_state_change('Stop Failure', 'Generator did not stop within 30 seconds, forcing to IDLE')
+                self.controller.transition_to(GeneratorState.IDLE)
         else:
             # Already stopped, count 2 seconds
             if time.ticks_diff(time.ticks_ms(), self.controller.kill_relay_delay_timer) >= 2000:
@@ -407,6 +426,8 @@ async def manage_start_stop():
         request = controller.sensor_manager.is_request_run()
         if request and not previous_request:
             controller.last_start_request = time.ticks_ms()
+        elif not request and previous_request:
+            controller.start_failed = False  # Reset failure flag when request clears
         previous_request = request
 
         # Update controller (handles state machine)
@@ -542,6 +563,7 @@ def update_config_route(request):
         controller.cool_down_duration = controller.cool_down_duration_minutes * 60 * 1000
         controller.maintenance_start_hour = config["maintenance_start_hour"]
         controller.maintenance_start_minute = config["maintenance_start_minute"]
+        controller.max_start_attempts = config["max_start_attempts"]
 
         if 'current_minutes' in data:
             global rtc_base_minutes, rtc_base_ticks

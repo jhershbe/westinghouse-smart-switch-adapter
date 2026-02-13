@@ -32,6 +32,10 @@
                 <label for='maintenance_start_minute'>Maintenance Start Minute (0-59):</label>
                 <input type='number' id='maintenance_start_minute' name='maintenance_start_minute' min='0' max='59' required>
             </div>
+            <div class='config-item'>
+                <label for='max_start_attempts'>Max Start Attempts:</label>
+                <input type='number' id='max_start_attempts' name='max_start_attempts' min='1' max='10' required>
+            </div>
             <button type='submit' class='save-btn'>Save Configuration</button>
         </form>
     </div>
@@ -45,6 +49,7 @@
                 document.getElementById('cool_down_duration_minutes').value = data.cool_down_duration_minutes;
                 document.getElementById('maintenance_start_hour').value = data.maintenance_start_hour;
                 document.getElementById('maintenance_start_minute').value = data.maintenance_start_minute;
+                document.getElementById('max_start_attempts').value = data.max_start_attempts;
             })
             .catch(e => console.error('Error loading config:', e));
 

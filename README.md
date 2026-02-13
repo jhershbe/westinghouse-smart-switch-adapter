@@ -29,6 +29,19 @@ This project provides firmware for an ESP32-based adapter that automates the sta
 - **LEDs:** Indicate the current state (run request, running, cool-down, maintenance).
 - **Relays:** Control the generator's start and stop (kill) circuits.
 
+## Configuration
+The system uses a `config.json` file to store configurable parameters. You can edit this file directly or use the web interface at `/config` to modify settings.
+
+### Configuration Parameters
+- **maintenance_interval_days** (default: 7): Number of days between scheduled maintenance runs.
+- **maintenance_duration_minutes** (default: 10): Duration of each maintenance run in minutes.
+- **cool_down_duration_minutes** (default: 15): Duration of the cool-down period after a run in minutes.
+- **maintenance_start_hour** (default: 12): Hour of the day (0-23) when maintenance runs should start.
+- **maintenance_start_minute** (default: 0): Minute of the hour when maintenance runs should start.
+- **max_start_attempts** (default: 3): Maximum number of attempts to start the generator before giving up and ignoring further run requests until the request is cleared.
+
+If the generator fails to start after the maximum attempts, the system will log the failure and stop trying until the run request is cleared (e.g., by turning off the external request signal).
+
 ## Bill of Materials
 
 * [Enclosure](https://www.amazon.com/dp/B0BZ871TH3)
@@ -66,8 +79,12 @@ The web interface shows real-time system status:
 - **Cool Down Active**: Displays when the generator is in cool-down mode after a run
 - **Maintenance Active**: Indicates when the system is performing a scheduled maintenance run
 - **Days Until Maintenance**: Countdown timer showing time remaining until next scheduled maintenance run (format: Xd Xh Xm)
+- **Start Attempts**: Number of consecutive start attempts since the last successful start
 
 All status indicators update in real-time and include color-coded indicators (green when active, gray when inactive).
+
+### Configuration Page
+Navigate to `/config` to access the configuration interface. This page allows you to view and modify the system settings described in the Configuration section above. Changes are saved to the `config.json` file and take effect immediately.
 
 ### State Transition Log
 The log section displays the last 50 state changes with timestamps. The following events are logged:
@@ -78,6 +95,8 @@ The log section displays the last 50 state changes with timestamps. The followin
 **Generator State Changes:**
 - Generator running status changes (started/stopped)
 - Run request input status changes (active/inactive)
+- Start attempt failed (logged for each failed attempt)
+- Start failure (logged when max attempts reached)
 
 **Cool Down Cycle:**
 - Cool down started (15 minute duration)
@@ -94,6 +113,7 @@ The log section displays the last 50 state changes with timestamps. The followin
 - Start relay deactivated (various conditions: already running, no request, maintenance)
 - Kill relay activated (stopping generator after cool down or maintenance)
 - Kill relay deactivated (generator stopped)
+- Stop failure (logged if generator doesn't stop within 30 seconds)
 
 Timestamps are automatically converted to your local time zone based on your device's clock. Events are displayed with newest entries first.
 
