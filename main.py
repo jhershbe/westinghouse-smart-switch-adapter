@@ -119,7 +119,7 @@ class GeneratorController:
         self.pulse_cooldown = 0
 
         self.state_log = []
-        self.max_log_entries = 50
+        self.max_log_entries = 200
 
         self.prev_state = {
             'running': False,
