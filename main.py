@@ -247,6 +247,13 @@ class State:
         pass
 
 class IdleState(State):
+    def __init__(self, controller):
+        super().__init__(controller)
+        self.logged_own_start = False
+
+    def on_enter(self):
+        self.logged_own_start = False
+
     def update(self):
         # Check for maintenance start
         if self.controller.is_maintenance_starting():
@@ -255,9 +262,13 @@ class IdleState(State):
         # Check for run request, only if cooldown expired and not failed
         elif self.controller.sensor_manager.is_request_run() and not self.controller.sensor_manager.is_running_debounced() and self.controller.pulse_cooldown == 0 and not self.controller.start_failed:
             self.controller.transition_to(GeneratorState.STARTING)
-        # If already running (e.g., startup), go to running
-        elif self.controller.sensor_manager.is_running_debounced():
+        # If already running (e.g., startup) and run request is active, go to running
+        elif self.controller.sensor_manager.is_running_debounced() and self.controller.sensor_manager.is_request_run():
             self.controller.transition_to(GeneratorState.RUNNING)
+        # Log if generator started on its own
+        if self.controller.sensor_manager.is_running_debounced() and not self.controller.sensor_manager.is_request_run() and not self.logged_own_start:
+            self.controller.log_state_change('Warning', 'Generator started on its own')
+            self.logged_own_start = True
 
 class StartingState(State):
     def on_enter(self):
