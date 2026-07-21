@@ -4,6 +4,7 @@ import asyncio
 import network
 import ujson
 import gc
+import log_persistence
 
 CONFIG_FILE = 'config.json'
 
@@ -14,7 +15,10 @@ def load_config():
         "cool_down_duration_minutes": 15,
         "maintenance_start_hour": 12,
         "maintenance_start_minute": 0,
-        "max_start_attempts": 3
+        "max_start_attempts": 3,
+        "log_flush_interval_ms": log_persistence.PERSISTED_LOG_FLUSH_INTERVAL_MS,
+        "log_flush_line_threshold": log_persistence.PERSISTED_LOG_FLUSH_LINE_THRESHOLD,
+        "persisted_log_max_bytes": log_persistence.PERSISTED_LOG_MAX_BYTES
     }
     try:
         with open(CONFIG_FILE) as f:
@@ -123,8 +127,15 @@ class GeneratorController:
         self.start_relay_end_time = 0
         self.pulse_cooldown = 0
 
-        self.state_log = []
         self.max_log_entries = 200
+        self.wall_clock_epoch_ms = None
+        self.wall_clock_ticks_ms = None
+        self.persisted_log_manager = log_persistence.PersistentLogManager(
+            flush_interval_ms=config.get("log_flush_interval_ms", log_persistence.PERSISTED_LOG_FLUSH_INTERVAL_MS),
+            flush_line_threshold=config.get("log_flush_line_threshold", log_persistence.PERSISTED_LOG_FLUSH_LINE_THRESHOLD),
+            max_bytes=config.get("persisted_log_max_bytes", log_persistence.PERSISTED_LOG_MAX_BYTES)
+        )
+        self.state_log = self.persisted_log_manager.load_entries()[-self.max_log_entries:]
 
         self.prev_state = {
             'running': False,
@@ -185,11 +196,40 @@ class GeneratorController:
 
     def log_state_change(self, event, details=''):
         """Log a state transition with timestamp"""
-        entry = (time.ticks_ms(), event, details)
+        timestamp = time.ticks_ms()
+        entry = {
+            'timestamp': timestamp,
+            'event': event,
+            'details': details
+        }
+        wall_timestamp = self.current_wall_timestamp(timestamp)
+        if wall_timestamp is not None:
+            entry['wall_timestamp'] = wall_timestamp
         self.state_log.append(entry)
         if len(self.state_log) > self.max_log_entries:
             self.state_log.pop(0)
-        print(f"[{entry[0]}] {event}: {details}")
+        self.persisted_log_manager.mark_dirty(self.state_log)
+        print(f"[{timestamp}] {event}: {details}")
+
+    def current_wall_timestamp(self, timestamp=None):
+        if self.wall_clock_epoch_ms is None or self.wall_clock_ticks_ms is None:
+            return None
+        if timestamp is None:
+            timestamp = time.ticks_ms()
+        return int(self.wall_clock_epoch_ms + timestamp - self.wall_clock_ticks_ms)
+
+    def sync_wall_clock(self, epoch_ms, ticks_ms=None):
+        if ticks_ms is None:
+            ticks_ms = time.ticks_ms()
+
+        self.wall_clock_epoch_ms = int(epoch_ms)
+        self.wall_clock_ticks_ms = int(ticks_ms)
+
+        for entry in self.state_log:
+            if entry.get('wall_timestamp') is None:
+                # Backfill hydrated/pre-sync entries once the browser supplies
+                # an epoch so restored logs keep stable timestamps on later boots.
+                entry['wall_timestamp'] = self.current_wall_timestamp(entry['timestamp'])
 
     def transition_to(self, state):
         if self.current_state:
@@ -524,6 +564,7 @@ async def manage_start_stop():
 
         # Feed watchdog every loop iteration (200 ms) to prevent reset during normal operation
         wdt.feed()
+        controller.persisted_log_manager.maybe_flush(controller.state_log)
         await asyncio.sleep_ms(200)
 
 async def update_leds():
@@ -573,10 +614,10 @@ def get_log(request):
     try:
         def generate_log():
             yield '{"log":['
-            for i, (ts, ev, det) in enumerate(controller.state_log):
+            for i, entry in enumerate(controller.state_log):
                 if i > 0:
                     yield ','
-                yield ujson.dumps({'timestamp': ts, 'event': ev, 'details': det})
+                yield ujson.dumps(entry)
             yield '],"current_state":' + ujson.dumps(controller.current_state_name)
             yield ',"uptime_ms":' + str(time.ticks_ms()) + '}'
         return generate_log(), 200, {'Content-Type': 'application/json'}
@@ -620,11 +661,14 @@ def parse_form_data(body):
 def update_config_route(request):
     try:
         data = parse_form_data(request.body)
-        data = {k: int(v) for k, v in data.items()}
+        current_minutes = int(data.pop('current_minutes')) if 'current_minutes' in data else None
+        current_epoch_ms = int(data.pop('current_epoch_ms')) if 'current_epoch_ms' in data else None
+        config_updates = {k: int(v) for k, v in data.items()}
         old_start_hour = config.get("maintenance_start_hour", 12)
         old_start_minute = config.get("maintenance_start_minute", 0)
-        config.update(data)
-        save_config(config)
+        if config_updates:
+            config.update(config_updates)
+            save_config(config)
 
         # Update controller from new config
         controller.maintenance_interval_days = config["maintenance_interval_days"]
@@ -635,14 +679,18 @@ def update_config_route(request):
         controller.maintenance_start_hour = config["maintenance_start_hour"]
         controller.maintenance_start_minute = config["maintenance_start_minute"]
         controller.max_start_attempts = config["max_start_attempts"]
+        controller.persisted_log_manager.flush_interval_ms = config["log_flush_interval_ms"]
+        controller.persisted_log_manager.flush_line_threshold = config["log_flush_line_threshold"]
+        controller.persisted_log_manager.max_bytes = config["persisted_log_max_bytes"]
 
-        if 'current_minutes' in data:
+        if current_minutes is not None:
             global rtc_base_minutes, rtc_base_ticks
-            host_minutes = data['current_minutes']
-            current_minutes = get_current_minutes()
-            if abs(current_minutes - host_minutes) > 1:
-                rtc_base_minutes = host_minutes
+            device_minutes = get_current_minutes()
+            if abs(device_minutes - current_minutes) > 1:
+                rtc_base_minutes = current_minutes
                 rtc_base_ticks = time.ticks_ms()
+        if current_epoch_ms is not None:
+            controller.sync_wall_clock(current_epoch_ms)
 
         # Reset countdown if start time changed
         if controller.maintenance_start_hour != old_start_hour or controller.maintenance_start_minute != old_start_minute:
