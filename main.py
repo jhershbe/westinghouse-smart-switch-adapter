@@ -68,6 +68,11 @@ while not ap.active():
 print('AP active, IP:', ap.ifconfig()[0])
 print('Connect to: http://gencontroller.local')
 
+# Watchdog timer – 8-second timeout.  Feed it every loop iteration (200 ms)
+# in manage_start_stop() so a hang or crash triggers an automatic reset.
+# Initialized after WiFi setup so slow AP bringup does not cause a spurious reset.
+wdt = machine.WDT(timeout=8000)
+
 # Import Microdot after WiFi is initialized
 from microdot import Microdot, Response, send_file
 
@@ -517,6 +522,8 @@ async def manage_start_stop():
         if loop_count % 100 == 0:
             gc.collect()
 
+        # Feed watchdog every loop iteration (200 ms) to prevent reset during normal operation
+        wdt.feed()
         await asyncio.sleep_ms(200)
 
 async def update_leds():
