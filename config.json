@@ -4,5 +4,8 @@
     "cool_down_duration_minutes": 15,
     "maintenance_start_hour": 12,
     "maintenance_start_minute": 0,
-    "max_start_attempts": 3
+    "max_start_attempts": 3,
+    "log_flush_interval_ms": 30000,
+    "log_flush_line_threshold": 20,
+    "persisted_log_max_bytes": 262144
 }

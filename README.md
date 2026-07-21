@@ -39,6 +39,9 @@ The system uses a `config.json` file to store configurable parameters. You can e
 - **maintenance_start_hour** (default: 12): Hour of the day (0-23) when maintenance runs should start.
 - **maintenance_start_minute** (default: 0): Minute of the hour when maintenance runs should start.
 - **max_start_attempts** (default: 3): Maximum number of attempts to start the generator before giving up and ignoring further run requests until the request is cleared.
+- **log_flush_interval_ms** (default: 30000): Maximum time between persisted log checkpoints.
+- **log_flush_line_threshold** (default: 20): Number of new log lines that triggers an immediate persisted checkpoint.
+- **persisted_log_max_bytes** (default: 262144): Maximum size of the bounded persisted log checkpoint kept in flash.
 
 If the generator fails to start after the maximum attempts, the system will log the failure and stop trying until the run request is cleared (e.g., by turning off the external request signal).
 
@@ -116,6 +119,8 @@ The log section displays the last 50 state changes with timestamps. The followin
 - Stop failure (logged if generator doesn't stop within 30 seconds)
 
 Timestamps are automatically converted to your local time zone based on your device's clock. Events are displayed with newest entries first.
+
+To survive watchdog resets, the controller checkpoints the in-memory log to flash every 30 seconds or every 20 new entries (whichever comes first). On boot it hydrates the normal RAM log from the persisted checkpoint, and once the browser reconnects it backfills stable wall-clock timestamps for restored pre-reset entries that were captured before time sync.
 
 ## Watchdog Timer
 

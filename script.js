@@ -116,7 +116,7 @@ function updateStatus() {
                 fetch('/config/update', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `current_minutes=${current_minutes}`
+                    body: `current_minutes=${current_minutes}&current_epoch_ms=${Date.now()}`
                 }).then(() => {
                     sent_sync = true;
                 });
@@ -170,8 +170,9 @@ function updateLog() {
             // Reverse to show newest first
             const reversedLog = data.log.slice().reverse();
             logContainer.innerHTML = reversedLog.map(entry => {
-                // Convert device timestamp to actual browser time
-                const actualTime = devicePowerOnTime + entry.timestamp;
+                const actualTime = entry.wall_timestamp !== undefined
+                    ? entry.wall_timestamp
+                    : devicePowerOnTime + entry.timestamp;
                 const timeStr = formatDateTime(actualTime);
                 return '<div class="log-entry">' +
                     '<span class="log-time">' + timeStr + '</span>' +
