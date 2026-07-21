@@ -117,6 +117,22 @@ The log section displays the last 50 state changes with timestamps. The followin
 
 Timestamps are automatically converted to your local time zone based on your device's clock. Events are displayed with newest entries first.
 
+## Watchdog Timer
+
+The firmware enables the ESP32 hardware watchdog (`machine.WDT`) immediately after the WiFi access point is brought up. This ensures the device automatically resets if it hangs, crashes, or becomes unresponsive (e.g. due to a networking deadlock or unexpected exception).
+
+- **Timeout:** 8 seconds (tunable via the `timeout` argument to `machine.WDT` near line 70 of `main.py`).
+- **Feed point:** The watchdog is fed once per iteration of the `manage_start_stop()` coroutine, which runs every 200 ms during normal operation. A single missed iteration does not trigger a reset; the device must be unresponsive for a full 8 seconds before the hardware resets it.
+- **Initialization safety:** The WDT is started *after* WiFi AP setup completes, so slow network bringup during boot does not cause a spurious reset.
+
+To change the timeout, locate this line in `main.py`:
+
+```python
+wdt = machine.WDT(timeout=8000)
+```
+
+and adjust the value (in milliseconds). Keep it well above the 200 ms loop period to avoid false resets during normal heavy load; 8000 ms (8 s) is a conservative default.
+
 ## Usage
 1. Connect the ESP32 pins as described above and in the diagram to your generator's remote start/stop interface and status LEDs.
 2. Flash the ESP32 with MicroPython and upload `main.py`.
