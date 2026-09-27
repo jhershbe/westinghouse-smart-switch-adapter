@@ -33,17 +33,17 @@ def normalize_log_entry(entry):
     }
 
 
-def build_persisted_payload(entries, flushed_at_ticks_ms, max_bytes=PERSISTED_LOG_MAX_BYTES):
+def build_persisted_payload(entries, flushed_at_uptime_ms, max_bytes=PERSISTED_LOG_MAX_BYTES):
     payload = {
-        'version': 1,
-        'flushed_at_ticks_ms': int(flushed_at_ticks_ms),
+        'version': 2,
+        'flushed_at_uptime_ms': int(flushed_at_uptime_ms),
         'entries': []
     }
 
     for entry in entries:
         normalized = normalize_log_entry(entry)
         persisted_entry = {
-            'age_ms': max(0, int(flushed_at_ticks_ms) - normalized['timestamp']),
+            'age_ms': max(0, int(flushed_at_uptime_ms) - normalized['timestamp']),
             'event': normalized['event'],
             'details': normalized['details']
         }
@@ -58,13 +58,15 @@ def build_persisted_payload(entries, flushed_at_ticks_ms, max_bytes=PERSISTED_LO
 
 
 def hydrate_persisted_entries(payload):
-    flushed_at_ticks_ms = int(payload.get('flushed_at_ticks_ms', 0))
+    flushed_at_uptime_ms = int(
+        payload.get('flushed_at_uptime_ms', payload.get('flushed_at_ticks_ms', 0))
+    )
     hydrated = []
 
     for entry in payload.get('entries', []):
         age_ms = entry.get('age_ms')
         if age_ms is None:
-            age_ms = max(0, flushed_at_ticks_ms - int(entry.get('timestamp', 0)))
+            age_ms = max(0, flushed_at_uptime_ms - int(entry.get('timestamp', 0)))
 
         hydrated_entry = {
             # Restore as a negative offset from the current boot so the existing
@@ -110,13 +112,13 @@ class PersistentLogManager:
             return []
         return hydrate_persisted_entries(payload)
 
-    def mark_dirty(self, state_log):
+    def mark_dirty(self, state_log, current_uptime_ms=None):
         self.pending_lines += 1
         if self.pending_lines >= self.flush_line_threshold:
-            return self.flush(state_log)
+            return self.flush(state_log, current_uptime_ms=current_uptime_ms)
         return False
 
-    def maybe_flush(self, state_log):
+    def maybe_flush(self, state_log, current_uptime_ms=None):
         if self.pending_lines <= 0:
             return False
 
@@ -124,13 +126,19 @@ class PersistentLogManager:
         if self._ticks_diff(current_ticks_ms, self.last_flush_ticks_ms) < self.flush_interval_ms:
             return False
 
-        return self.flush(state_log, current_ticks_ms=current_ticks_ms)
+        return self.flush(
+            state_log,
+            current_ticks_ms=current_ticks_ms,
+            current_uptime_ms=current_uptime_ms
+        )
 
-    def flush(self, state_log, current_ticks_ms=None):
+    def flush(self, state_log, current_ticks_ms=None, current_uptime_ms=None):
         if current_ticks_ms is None:
             current_ticks_ms = self._ticks_ms()
+        if current_uptime_ms is None:
+            current_uptime_ms = current_ticks_ms
 
-        payload = build_persisted_payload(state_log, current_ticks_ms, self.max_bytes)
+        payload = build_persisted_payload(state_log, current_uptime_ms, self.max_bytes)
         temp_path = self.file_path + '.tmp'
 
         with open(temp_path, 'w') as f:

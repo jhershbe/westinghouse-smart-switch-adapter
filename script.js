@@ -147,6 +147,10 @@ function updateUptime() {
             if (uptimeDisplay) {
                 uptimeDisplay.textContent = formatUptime(currentUptime / 1000);
             }
+            const firmwareVersion = document.getElementById('firmwareVersion');
+            if (firmwareVersion && data.firmware_version) {
+                firmwareVersion.textContent = data.firmware_version;
+            }
         })
         .catch(e => console.error('Error updating uptime:', e));
 }
@@ -187,6 +191,10 @@ function updateLog() {
             // Update uptime display
             if (document.getElementById('uptimeDisplay')) {
                 document.getElementById('uptimeDisplay').textContent = formatUptime(currentUptime);
+            }
+            const firmwareVersion = document.getElementById('firmwareVersion');
+            if (firmwareVersion && data.firmware_version) {
+                firmwareVersion.textContent = data.firmware_version;
             }
         })
         .catch(e => {
@@ -256,6 +264,26 @@ function overrideRequest(value) {
     .then(data => {
         const msg = value === null ? 'Using sensor' : (value ? 'YES' : 'NO');
         updateStatus();
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+
+function armMaintenanceMode() {
+    if (!confirm('Arm maintenance mode? After this, reset or power-cycle the controller. It will stop at the MicroPython REPL before starting the watchdog.')) {
+        return;
+    }
+    fetch('/maintenance/arm', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            alert(data.message);
+        } else {
+            alert('Error: ' + (data.error || 'Could not arm maintenance mode'));
+        }
     })
     .catch(e => alert('Error: ' + e));
 }

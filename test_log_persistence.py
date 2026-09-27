@@ -71,7 +71,7 @@ class PersistentLogManagerTests(unittest.TestCase):
     def test_load_entries_hydrates_for_ram_log(self):
         payload = build_persisted_payload(
             [{'timestamp': 1000, 'event': 'Before Reset', 'details': 'saved'}],
-            flushed_at_ticks_ms=5000
+            flushed_at_uptime_ms=5000
         )
         with open(self.file_path, 'w') as f:
             json.dump(payload, f)
@@ -92,7 +92,7 @@ class PersistentLogManagerTests(unittest.TestCase):
                 'details': 'saved',
                 'wall_timestamp': 1720000001500
             }],
-            flushed_at_ticks_ms=2000
+            flushed_at_uptime_ms=2000
         )
         with open(self.file_path, 'w') as f:
             json.dump(payload, f)
@@ -113,7 +113,7 @@ class PersistentLogManagerTests(unittest.TestCase):
                 'details': 'x' * 80
             })
 
-        manager.flush(state_log, current_ticks_ms=1000)
+        manager.flush(state_log, current_ticks_ms=1000, current_uptime_ms=1000)
         payload = self.read_payload()
 
         self.assertLessEqual(len(json.dumps(payload)), 260)
@@ -121,8 +121,40 @@ class PersistentLogManagerTests(unittest.TestCase):
         self.assertNotEqual(payload['entries'][0]['event'], 'Event 0')
 
         state_log.append({'timestamp': 1100, 'event': 'Latest', 'details': 'ok'})
-        manager.flush(state_log, current_ticks_ms=1200)
+        manager.flush(state_log, current_ticks_ms=1200, current_uptime_ms=1200)
         self.assertTrue(os.path.exists(self.backup_path))
+
+    def test_extended_uptime_keeps_persisted_age_correct_after_raw_tick_wrap(self):
+        state_log = [{
+            'timestamp': 1073741800,
+            'event': 'Before Raw Tick Wrap',
+            'details': 'saved'
+        }]
+        payload = build_persisted_payload(
+            state_log,
+            flushed_at_uptime_ms=1073741900
+        )
+        self.assertEqual(payload['entries'][0]['age_ms'], 100)
+        self.assertEqual(payload['version'], 2)
+        self.assertEqual(payload['flushed_at_uptime_ms'], 1073741900)
+
+    def test_loads_legacy_v1_payload_with_existing_age(self):
+        payload = {
+            'version': 1,
+            'flushed_at_ticks_ms': 25,
+            'entries': [{
+                'age_ms': 5000,
+                'event': 'Legacy',
+                'details': 'saved'
+            }]
+        }
+        with open(self.file_path, 'w') as f:
+            json.dump(payload, f)
+
+        manager = self.make_manager()
+        hydrated = manager.load_entries()
+        self.assertEqual(hydrated[0]['timestamp'], -5000)
+        self.assertEqual(hydrated[0]['event'], 'Legacy')
 
     def test_load_uses_backup_if_current_checkpoint_is_corrupt(self):
         manager = self.make_manager(flush_line_threshold=1)

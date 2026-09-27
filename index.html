@@ -64,18 +64,21 @@
             <span class='status-value' id='lastRunSenseEnd'>--</span>
         </div>
 
-        <div style='margin-top: 20px; text-align: center;'>
+        <div class='nav-buttons'>
             <a href='/logpage' class='button-primary'>View State Transition Log</a>
             <a href='/config' class='button-primary'>Configuration</a>
+            <a href='/memory' class='button-primary'>Memory</a>
         </div>
         <div style='margin-top: 10px; text-align: center; font-size: 12px; color: #666;'>
-            Uptime: <span id='uptimeDisplay'>--</span>
+            Uptime: <span id='uptimeDisplay'>--</span><br>
+            Firmware: <span id='firmwareVersion'>--</span>
         </div>
 
         <div class='test-section'>
             <h3>Testing Controls</h3>
             <div class='test-buttons'>
                 <button class='button-primary' onclick='testConnection()'>Test Connection</button>
+                <button class='button-secondary' onclick='armMaintenanceMode()'>Arm Thonny Maintenance</button>
                 <button class='button-secondary' onclick='forceMaintenance()'>Force Maintenance (2s)</button>
             </div>
             <div class='test-buttons'>
